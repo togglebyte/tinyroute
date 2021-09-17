@@ -11,3 +11,4 @@ pub mod frame;
 //     - Reexportes -
 // -----------------------------------------------------------------------------
 pub use router::{Router, ToAddress};
+pub use bytes::Bytes;
