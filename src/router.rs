@@ -1,14 +1,12 @@
 use std::collections::HashMap;
 
 use bytes::Bytes;
-use log::{error, info};
+use log::{error, info, warn};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::mpsc;
 
-use crate::agent::{
-    Agent, AgentMsg, AnyMessage, Deserializer, Local, Remote, Serializer,
-};
+use crate::agent::{Agent, AgentMsg, AnyMessage};
 use crate::errors::{Error, Result};
 
 // -----------------------------------------------------------------------------
@@ -24,9 +22,8 @@ impl<A: ToAddress> RouterTx<A> {
         &self,
         address: A,
         tx: mpsc::Sender<AgentMsg<A>>,
-        channel: Channel,
     ) -> Result<()> {
-        match self.0.send(RouterMessage::Register(address, tx, channel)) {
+        match self.0.send(RouterMessage::Register(address, tx)) {
             Ok(()) => Ok(()),
             Err(_) => {
                 error!("Failed to register local agent");
@@ -59,15 +56,9 @@ pub(crate) enum RouterMessage<A: ToAddress> {
     // The only thing that should be sending these remote messages
     // are the reader halves of a socket!
     RemoteMessage { recipient: A, sender: A, bytes: Bytes },
-    Register(A, mpsc::Sender<AgentMsg<A>>, Channel),
+    Register(A, mpsc::Sender<AgentMsg<A>>),
     Track { from: A, to: A },
     Unregister(A),
-}
-
-#[derive(Debug, Copy, Clone)]
-pub(crate) enum Channel {
-    Local,
-    Remote,
 }
 
 // -----------------------------------------------------------------------------
@@ -76,7 +67,7 @@ pub(crate) enum Channel {
 pub struct Router<A: ToAddress> {
     rx: mpsc::UnboundedReceiver<RouterMessage<A>>,
     tx: mpsc::UnboundedSender<RouterMessage<A>>,
-    channels: HashMap<A, (mpsc::Sender<AgentMsg<A>>, Channel)>,
+    channels: HashMap<A, mpsc::Sender<AgentMsg<A>>>,
     subscriptions: HashMap<A, Vec<A>>,
 }
 
@@ -86,41 +77,21 @@ impl<A: ToAddress + Clone> Router<A> {
         Self { tx, rx, channels: HashMap::new(), subscriptions: HashMap::new() }
     }
 
-    pub fn new_local_agent<T: Send + 'static>(
+    pub fn new_agent<T: Send + 'static>(
         &mut self,
         cap: usize,
         address: A,
-    ) -> Option<Agent<Local<T, A>, A>> {
+    ) -> Option<Agent<T, A>> {
         let (tx, transport_rx) = mpsc::channel(cap);
-        let transport = Local::new(transport_rx);
-        let agent = Agent::new(self.router_tx(), transport, address.clone());
+        let agent = Agent::new(self.router_tx(), address.clone(), transport_rx);
         if self.channels.contains_key(&address) {
+            warn!(
+                "There is already an agent registered at \"{}\"",
+                address.to_string()
+            );
             return None;
         }
-        self.channels.insert(address, (tx, Channel::Local));
-        Some(agent)
-    }
-
-    pub fn new_remote_agent<T: Send + 'static, Ser, De>(
-        &mut self,
-        cap: usize,
-        address: A,
-        serializer: Ser,
-        deserializer: De,
-    ) -> Option<Agent<Remote<T, A, Ser, De>, A>>
-    where
-        T: Send + DeserializeOwned + Serialize + 'static,
-        Ser: Serializer<T>,
-        De: Deserializer<T>,
-        A: ToAddress,
-    {
-        let (tx, transport_rx) = mpsc::channel(cap);
-        let transport = Remote::new(transport_rx, serializer, deserializer);
-        let agent = Agent::new(self.router_tx(), transport, address.clone());
-        if self.channels.contains_key(&address) {
-            return None;
-        }
-        self.channels.insert(address, (tx, Channel::Remote));
+        self.channels.insert(address, tx);
         Some(agent)
     }
 
@@ -132,7 +103,7 @@ impl<A: ToAddress + Clone> Router<A> {
         while let Some(msg) = self.rx.recv().await {
             match msg {
                 RouterMessage::Message { sender, recipient, msg } => {
-                    let (tx, _) = match self.channels.get(&recipient) {
+                    let tx = match self.channels.get(&recipient) {
                         Some(val) => val,
                         None => {
                             info!(
@@ -157,11 +128,7 @@ impl<A: ToAddress + Clone> Router<A> {
                 }
                 RouterMessage::RemoteMessage { recipient, sender, bytes } => {
                     let tx = match self.channels.get(&recipient) {
-                        Some((_, Channel::Local)) => {
-                            error!("\"{}\" tried to send a remote message to a local channel: \"{}\"", sender.to_string(), recipient.to_string());
-                            continue;
-                        }
-                        Some((tx, _)) => tx,
+                        Some(tx) => tx,
                         None => {
                             info!(
                                 "No channel registered at \"{}\"",
@@ -185,15 +152,17 @@ impl<A: ToAddress + Clone> Router<A> {
                         self.channels.remove(&recipient);
                     }
                 }
-                RouterMessage::Register(address, tx, channel) => {
-                    if self.channels.contains_key(&address) { continue }
+                RouterMessage::Register(address, tx) => {
+                    if self.channels.contains_key(&address) {
+                        warn!(
+                            "There is already an agent registered at \"{}\"",
+                            address.to_string()
+                        );
+                        continue;
+                    }
                     let address_str = address.to_string();
-                    self.channels.insert(address, (tx, channel));
-                    info!(
-                        "Registered \"{}\" as a {:?}",
-                        address_str,
-                        channel
-                    );
+                    self.channels.insert(address, tx);
+                    info!("Registered \"{}\"", address_str);
                 }
                 RouterMessage::Track { from, to } => {
                     let tracked =
@@ -220,8 +189,9 @@ impl<A: ToAddress + Clone> Router<A> {
                             relations.retain(|p| p != &address);
                         });
                         let address = address.clone();
-                        if let Some((tx, _)) = self.channels.get(&s) {
-                            let _ = tx.send(AgentMsg::AgentRemoved(address)).await;
+                        if let Some(tx) = self.channels.get(&s) {
+                            let _ =
+                                tx.send(AgentMsg::AgentRemoved(address)).await;
                         }
                     }
                 }

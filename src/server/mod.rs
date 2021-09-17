@@ -9,15 +9,13 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc;
 use tokio::time;
 
-use crate::agent::{
-    Agent, Message, Local,
-};
+use crate::agent::{Agent, Message};
 use crate::errors::Result;
-use crate::frame::{Frame, FramedMessage, FrameOutput};
+use crate::frame::{Frame, FrameOutput, FramedMessage};
 
 mod tcp;
 
-use crate::router::{Channel, RouterMessage, RouterTx, ToAddress};
+use crate::router::{RouterMessage, RouterTx, ToAddress};
 pub use tcp::TcpServer;
 
 #[cfg(target_os = "linux")]
@@ -88,9 +86,8 @@ impl<Srv: Server> TheServer<Srv> {
 
         // Register the agent
         let (transport_tx, transport_rx) = mpsc::channel(cap);
-        let transport = Local::new(transport_rx);
-        router_tx.register_agent(address.clone(), transport_tx, Channel::Local).ok()?;
-        let agent = Agent::new(router_tx.clone(), transport, address.clone());
+        router_tx.register_agent(address.clone(), transport_tx).ok()?;
+        let agent = Agent::new(router_tx.clone(), address.clone(), transport_rx);
 
         // Spawn the reader
         tokio::spawn(spawn_reader(reader, address, router_tx, timeout));
@@ -184,7 +181,7 @@ where
     A: ToAddress,
     W: AsyncWrite,
 {
-    agent: Agent<Local<FramedMessage, A>, A>,
+    agent: Agent<FramedMessage, A>,
     writer: W,
 }
 
@@ -193,12 +190,12 @@ where
     A: ToAddress,
     W: AsyncWrite + Unpin,
 {
-    pub fn new(agent: Agent<Local<FramedMessage, A>, A>, writer: W) -> Self {
+    pub fn new(agent: Agent<FramedMessage, A>, writer: W) -> Self {
         Self { agent, writer }
     }
 
     pub async fn recv(&mut self) -> Result<()> {
-        if let Message::Value(framed_message, _)  = self.agent.recv().await? {
+        if let Message::Value(framed_message, _) = self.agent.recv().await? {
             self.writer.write_all(&framed_message.0).await;
         }
         Ok(())
