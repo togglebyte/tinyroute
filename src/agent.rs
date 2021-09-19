@@ -1,8 +1,7 @@
 //! Agents receive messages from the router, and communicate with other 
 //! Agents via the [`crate::router::Router`], by sending a message to an [`crate::ToAddress`]
 //!
-//! Remote agents receive input over the network and requires 
-//! a [`crate::agent::Serializer`] and a [`crate::agent::Deserializer`].
+//! Remote agents receive input over the network.
 //!
 //! ## Example: creating an agent
 //!

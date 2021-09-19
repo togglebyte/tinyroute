@@ -15,12 +15,12 @@ use crate::frame::{Frame, FrameOutput, FramedMessage};
 mod tcp;
 
 use crate::router::{RouterMessage, RouterTx, ToAddress};
-pub use tcp::TcpServer;
+pub use tcp::TcpListener;
 
 #[cfg(target_os = "linux")]
 mod uds;
 #[cfg(target_os = "linux")]
-pub use uds::UdsServer;
+pub use uds::UdsListener;
 
 /// Client payload.
 /// Access the bytes through `self.data()`
@@ -43,7 +43,7 @@ impl Payload {
 }
 
 /// Some kind of listener
-pub trait Server: Sync {
+pub trait Listener: Sync {
     /// The reading half of the connection
     type Reader: AsyncRead + Unpin + Send + 'static;
     /// The writing half of the connection
@@ -62,15 +62,39 @@ pub trait Server: Sync {
 }
 
 /// Because writing this entire trait malarkey is messy!
-pub type ServerFuture<'a, T, U> =
-    Pin<Box<dyn Future<Output = Result<(T, U)>> + Send + 'a>>;
+pub type ServerFuture<'a, T, U> = Pin<Box<dyn Future<Output = Result<(T, U)>> + Send + 'a>>;
 
-pub struct TheServer<Srv: Server> {
-    server: Srv,
+/// Accept incoming connections and provide agents as an abstraction.
+///
+/// ```
+/// use tinyroute::server::{Server, TcpListener};
+///
+///
+/// #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+/// struct Address(usize); 
+/// # impl tinyroute::ToAddress for Address {
+/// #   fn from_bytes(_: &[u8]) -> Option<Self> { None }
+/// # }
+/// # async fn run(router: tinyroute::Router<Address>) {
+/// let tcp_listener = TcpListener::bind("127.0.0.1:5000").await.unwrap();
+/// let mut server = Server::new(tcp_listener);
+/// let mut id = 0;
+/// while let Some(connection) = server.next(
+///     router.router_tx(),
+///     Address(id), 
+///     None, 
+///     1024
+/// ).await {
+///     id += 1;
+/// }
+/// # }
+/// ```
+pub struct Server<L: Listener> {
+    server: L,
 }
 
-impl<Srv: Server> TheServer<Srv> {
-    pub fn new(server: Srv) -> Self {
+impl<L: Listener> Server<L> {
+    pub fn new(server: L) -> Self {
         Self { server }
     }
 
@@ -80,7 +104,7 @@ impl<Srv: Server> TheServer<Srv> {
         address: A,
         timeout: Option<Duration>,
         cap: usize,
-    ) -> Option<Connection<A, <Srv as Server>::Writer>> {
+    ) -> Option<Connection<A, <L as Listener>::Writer>> {
         let (reader, writer) = self.server.accept().await.ok()?;
 
         // Register the agent
