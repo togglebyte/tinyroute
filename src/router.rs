@@ -2,8 +2,6 @@ use std::collections::HashMap;
 
 use bytes::Bytes;
 use log::{error, info, warn};
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 use tokio::sync::mpsc;
 
 use crate::agent::{Agent, AgentMsg, AnyMessage};
@@ -59,6 +57,7 @@ pub(crate) enum RouterMessage<A: ToAddress> {
     Register(A, mpsc::Sender<AgentMsg<A>>),
     Track { from: A, to: A },
     Unregister(A),
+    Shutdown(A),
 }
 
 // -----------------------------------------------------------------------------
@@ -97,6 +96,27 @@ impl<A: ToAddress + Clone> Router<A> {
 
     pub fn router_tx(&self) -> RouterTx<A> {
         RouterTx(self.tx.clone())
+    }
+
+    async fn unregister(&mut self, address: A) {
+        if self.channels.remove(&address).is_none() {
+            return;
+        }
+
+        let subs = match self.subscriptions.remove(&address) {
+            None => return,
+            Some(s) => s,
+        };
+
+        for s in subs {
+            self.subscriptions.get_mut(&s).map(|relations| {
+                relations.retain(|p| p != &address);
+            });
+            let address = address.clone();
+            if let Some(tx) = self.channels.get(&s) {
+                let _ = tx.send(AgentMsg::AgentRemoved(address)).await;
+            }
+        }
     }
 
     pub async fn run(mut self) {
@@ -175,25 +195,21 @@ impl<A: ToAddress + Clone> Router<A> {
                     tracked.push(from);
                 }
                 RouterMessage::Unregister(address) => {
-                    if self.channels.remove(&address).is_none() {
-                        continue;
-                    }
-
-                    let subs = match self.subscriptions.remove(&address) {
-                        None => continue,
-                        Some(s) => s,
-                    };
-
-                    for s in subs {
-                        self.subscriptions.get_mut(&s).map(|relations| {
-                            relations.retain(|p| p != &address);
-                        });
-                        let address = address.clone();
-                        if let Some(tx) = self.channels.get(&s) {
-                            let _ =
-                                tx.send(AgentMsg::AgentRemoved(address)).await;
+                    self.unregister(address).await;
+                }
+                RouterMessage::Shutdown(sender) => {
+                    let tx = match self.channels.get(&sender) {
+                        Some(val) => val,
+                        None => {
+                            info!(
+                                "No channel registered at \"{}\"",
+                                sender.to_string()
+                            );
+                            continue;
                         }
-                    }
+                    };
+                    tx.send(AgentMsg::Shutdown).await;
+                    self.unregister(sender);
                 }
             }
         }

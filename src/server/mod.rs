@@ -87,7 +87,8 @@ impl<Srv: Server> TheServer<Srv> {
         // Register the agent
         let (transport_tx, transport_rx) = mpsc::channel(cap);
         router_tx.register_agent(address.clone(), transport_tx).ok()?;
-        let agent = Agent::new(router_tx.clone(), address.clone(), transport_rx);
+        let agent =
+            Agent::new(router_tx.clone(), address.clone(), transport_rx);
 
         // Spawn the reader
         tokio::spawn(spawn_reader(reader, address, router_tx, timeout));
@@ -106,56 +107,64 @@ async fn spawn_reader<A, R>(
     A: ToAddress,
 {
     let mut frame = Frame::empty();
-    loop {
+    'read: loop {
         let read = async {
             let res = frame.async_read(&mut reader).await;
 
-            match res {
-                Ok(0) => false,
-                Ok(_) => {
-                    match frame.try_msg() {
-                        Ok(Some(FrameOutput::Heartbeat)) => true,
-                        Ok(Some(FrameOutput::Message(msg))) => {
-                            let address = msg
-                                .iter()
-                                .cloned()
-                                .take_while(|b| (*b as char) != '|')
-                                .collect::<Vec<u8>>();
+            'msg: loop {
+                match res {
+                    Ok(0) => break 'msg false,
+                    Ok(_) => {
+                        match frame.try_msg() {
+                            Ok(Some(FrameOutput::Heartbeat)) => continue,
+                            Ok(Some(FrameOutput::Message(msg))) => {
+                                let address = msg
+                                    .iter()
+                                    .cloned()
+                                    .take_while(|b| (*b as char) != '|')
+                                    .collect::<Vec<u8>>();
 
-                            // return in the event of the index being
-                            // larger than the payload it self
-                            let index = address.len() + 1;
-                            if index >= msg.len() {
-                                return true;
+                                // return in the event of the index being
+                                // larger than the payload it self
+                                let index = address.len() + 1;
+                                if index >= msg.len() {
+                                    return true;
+                                }
+
+                                let address = match A::from_bytes(&address) {
+                                    Some(a) => a,
+                                    None => break 'msg true,
+                                };
+
+                                let payload = Payload::new(index, msg);
+                                let bytes =
+                                    Bytes::from(payload.data().to_vec());
+
+                                match router_tx.send(
+                                    RouterMessage::RemoteMessage {
+                                        bytes,
+                                        sender: sender.clone(),
+                                        recipient: address,
+                                    },
+                                ) {
+                                    Ok(_) => continue,
+                                    Err(e) => break 'msg false,
+                                }
                             }
-
-                            let address = match A::from_bytes(&address) {
-                                Some(a) => a,
-                                None => return true,
-                            };
-
-                            let payload = Payload::new(index, msg);
-                            let bytes = Bytes::from(payload.data().to_vec());
-
-                            match router_tx.send(RouterMessage::RemoteMessage {
-                                bytes,
-                                sender: sender.clone(),
-                                recipient: address,
-                            }) {
-                                Ok(_) => true,
-                                Err(e) => false,
+                            Ok(None) => break 'msg true,
+                            Err(e) => {
+                                error!("invalid payload. {:?}", e);
+                                break 'msg false
                             }
-                        }
-                        Ok(None) => true,
-                        Err(e) => {
-                            error!("invalid payload. {:?}", e);
-                            false
                         }
                     }
-                }
-                Err(e) => {
-                    error!("failed to reade from the socket. reason: {:?}", e);
-                    false
+                    Err(e) => {
+                        error!(
+                            "failed to read from the socket. reason: {:?}",
+                            e
+                        );
+                        break 'msg false
+                    }
                 }
             }
         };
@@ -173,6 +182,11 @@ async fn spawn_reader<A, R>(
         if !restart {
             break;
         }
+    }
+
+    // Shutdown the agent
+    if let Err(e) = router_tx.send(RouterMessage::Shutdown(sender)) {
+        error!("failed to shutdown agent: {:?}", e);
     }
 }
 

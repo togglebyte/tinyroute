@@ -15,6 +15,7 @@ const HEADER_SIZE: usize = 1;
 
 /// Out from `try_msg`, trying to create a framed message.
 /// This is either a heartbeat or a framed message.
+#[derive(Debug)]
 pub enum FrameOutput {
     /// Framed message (excluding the content length and header)
     Message(Vec<u8>),
@@ -25,7 +26,7 @@ pub enum FrameOutput {
 /// A message that has a header byte and a content length
 /// prefixed to it.
 #[derive(Debug, Clone)]
-pub struct FramedMessage(pub(crate) Bytes);
+pub struct FramedMessage(pub Bytes);
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]

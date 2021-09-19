@@ -1,5 +1,15 @@
 # TODO
 
+## Bridge 
+
+* [ ] Timeout on bridge connections:
+      If the bridge connection is dropped and the message
+      buffer is full, start timing out messages, and 
+      eventually drop the bridge.
+* [ ] BUG: messages sent over the bridge isn't being sent 
+      on resume.
+
+
 ## RouterTx
 
 * [ ] Any failure to send to the router is unrecoverable 

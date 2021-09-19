@@ -34,16 +34,16 @@
 //!     }
 //! }
 //! ```
+use log::{error, info};
+use rand::prelude::*;
 use std::time::Duration;
-use log::{info, error};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc;
-use rand::prelude::*;
 
 mod tcp;
 
-use crate::frame::{FrameOutput, FramedMessage, Frame};
 use crate::errors::Error;
+use crate::frame::{Frame, FrameOutput, FramedMessage};
 
 pub use tcp::TcpClient;
 
@@ -60,7 +60,7 @@ pub enum ClientMessage {
     /// Bunch of delicious bytes
     Payload(FramedMessage),
     /// Heartbeats
-    Heartbeat
+    Heartbeat,
 }
 
 /// A client connection
@@ -75,10 +75,10 @@ pub trait Client {
 }
 
 /// Get a [`ClientSender`] and [`ClientReceiver`] pair
-pub fn connect(connection: impl Client, heartbeat: Option<Duration>) -> (
-    ClientSender,
-    ClientReceiver
-) {
+pub fn connect(
+    connection: impl Client,
+    heartbeat: Option<Duration>,
+) -> (ClientSender, ClientReceiver) {
     let (writer_tx, writer_rx) = mpsc::channel(100);
     let (reader_tx, reader_rx) = mpsc::channel(100);
 
@@ -96,7 +96,10 @@ pub fn connect(connection: impl Client, heartbeat: Option<Duration>) -> (
 
 async fn run_heartbeat(freq: Duration, writer_tx: mpsc::Sender<ClientMessage>) {
     // Heart beat should never be less than a second
-    assert!(freq.as_millis() > 1000, "Heart beat should never be less than a second");
+    assert!(
+        freq.as_millis() > 1000,
+        "Heart beat should never be less than a second"
+    );
 
     loop {
         tokio::time::sleep(freq - jitter()).await;
@@ -116,26 +119,35 @@ fn jitter() -> Duration {
     Duration::from_millis(ms)
 }
 
-
-async fn use_reader(mut reader: impl AsyncRead + Unpin + Send + 'static, output_tx: mpsc::Sender<Vec<u8>>, writer_tx: mpsc::Sender<ClientMessage>) {
+async fn use_reader(
+    mut reader: impl AsyncRead + Unpin + Send + 'static,
+    output_tx: mpsc::Sender<Vec<u8>>,
+    writer_tx: mpsc::Sender<ClientMessage>,
+) {
     let mut frame = Frame::empty();
 
-    loop {
+    'read: loop {
         let res = frame.async_read(&mut reader).await;
-        match res {
-            Ok(0) => break,
-            Ok(_) => {
-                match frame.try_msg() {
-                    Ok(None) => continue,
-                    Ok(Some(FrameOutput::Heartbeat)) => { error!("received a heartbeat on the reader"); }
-                    Ok(Some(FrameOutput::Message(payload))) => drop(output_tx.send(payload).await),
+
+        'msg: loop {
+            match res {
+                Ok(0) => break 'read,
+                Ok(_) => match frame.try_msg() {
+                    Ok(None) => break 'msg,
+                    Ok(Some(FrameOutput::Heartbeat)) => {
+                        error!("received a heartbeat on the reader");
+                    }
+                    Ok(Some(FrameOutput::Message(payload))) => {
+                        eprintln!("sending payload");
+                        drop(output_tx.send(payload).await)
+                    }
                     Err(Error::MalformedHeader) => {}
                     Err(_) => unreachable!(),
+                },
+                Err(e) => {
+                    error!("Connection closed: {:?}", e);
+                    break 'read;
                 }
-            }
-            Err(e) => {
-                error!("Connection closed: {:?}", e);
-                break;
             }
         }
     }
@@ -144,7 +156,10 @@ async fn use_reader(mut reader: impl AsyncRead + Unpin + Send + 'static, output_
     info!("Client closed (reader)");
 }
 
-async fn use_writer(mut writer: impl AsyncWrite + Unpin + Send + 'static, mut rx: mpsc::Receiver<ClientMessage>) -> Option<()> {
+async fn use_writer(
+    mut writer: impl AsyncWrite + Unpin + Send + 'static,
+    mut rx: mpsc::Receiver<ClientMessage>,
+) -> Option<()> {
     loop {
         let msg = rx.recv().await?;
         match msg {
@@ -153,15 +168,15 @@ async fn use_writer(mut writer: impl AsyncWrite + Unpin + Send + 'static, mut rx
                 let beat = &[crate::frame::Header::Heartbeat as u8];
                 if let Err(e) = writer.write_all(beat).await {
                     error!("Failed to write heartbeat: {:?}", e);
-                    break
+                    break;
                 }
             }
             ClientMessage::Payload(payload) => {
                 if let Err(e) = writer.write_all(&payload.0).await {
                     error!("Failed to write payload: {:?}", e);
-                    break
+                    break;
                 }
-            },
+            }
         }
     }
     info!("Client closed (writer)");
