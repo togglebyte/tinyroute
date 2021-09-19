@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use log::error;
-use serde::Serialize;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc;
 use tokio::time;
@@ -107,7 +106,7 @@ async fn spawn_reader<A, R>(
     A: ToAddress,
 {
     let mut frame = Frame::empty();
-    'read: loop {
+    loop {
         let read = async {
             let res = frame.async_read(&mut reader).await;
 

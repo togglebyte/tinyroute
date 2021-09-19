@@ -2,9 +2,8 @@ use std::time::Duration;
 
 use crate::agent::{Agent, Message};
 use crate::client::{
-    connect, Client, ClientMessage, ClientReceiver, ClientSender, TcpClient,
+    connect, ClientMessage, ClientReceiver, ClientSender, TcpClient,
 };
-use crate::errors::Result;
 use crate::frame::Frame;
 use crate::ToAddress;
 use log::{error, info};
@@ -32,6 +31,7 @@ async fn connect_to(
         match TcpClient::connect(addr.as_ref()).await {
             Ok(c) => break Some(c),
             Err(e) => {
+                error!("failed to connect. reason: {:?}", e);
                 let sleep_time = match reconnect {
                     Reconnect::Constant(n) => *n,
                     Reconnect::Exponential { seconds, max } => {
@@ -162,7 +162,10 @@ impl<'addr, T: Send + 'static, A: ToAddress> Bridge<'addr, T, A> {
 
         eprintln!("Trying to send the message...");
 
-        if let Message::RemoteMessage(bytes, sender) = msg {
+        // There isn't much point to the `sender` here,
+        // however it might be an idea to attach it to the message, 
+        // along with the host. So it's sender@host.
+        if let Message::RemoteMessage(bytes, _sender) = msg {
             eprintln!("{:?}", std::str::from_utf8(&bytes).unwrap());
 
             // Send framed messages only!

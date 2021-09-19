@@ -112,13 +112,9 @@ use std::marker::PhantomData;
 use std::fmt::{Formatter, Display, Result as DisplayResult};
 
 use bytes::Bytes;
-use log::error;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 use tokio::sync::mpsc;
 
 use crate::errors::{Error, Result};
-use crate::frame::Frame;
 use crate::router::{RouterMessage, RouterTx, ToAddress};
 
 // -----------------------------------------------------------------------------
