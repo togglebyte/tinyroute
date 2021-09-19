@@ -1,11 +1,11 @@
 mod router;
 
 pub mod agent;
-pub mod errors;
-pub mod server;
-pub mod client;
-pub mod frame;
 pub mod bridge;
+pub mod client;
+pub mod errors;
+pub mod frame;
+pub mod server;
 
 
 // -----------------------------------------------------------------------------

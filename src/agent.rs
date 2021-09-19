@@ -109,6 +109,7 @@
 //! ```
 use std::any::Any;
 use std::marker::PhantomData;
+use std::fmt::{Formatter, Display, Result as DisplayResult};
 
 use bytes::Bytes;
 use log::error;
@@ -155,6 +156,17 @@ impl<T: Clone + 'static, A: ToAddress> Clone for Message<T, A> {
             Self::Value(val, addr) => Self::Value(val.clone(), addr.clone()),
             Self::AgentRemoved(addr) => Self::AgentRemoved(addr.clone()),
             Self::Shutdown => Self::Shutdown
+        }
+    }
+}
+
+impl<T: Display + 'static, A: ToAddress> Display for Message<T, A> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> DisplayResult {
+        match self {
+            Self::Value(val, sender) => write!(f, "{} > Value<{}>", sender.to_string(), val),
+            Self::RemoteMessage(bytes, sender) => write!(f, "Remote({}) > Bytes({})", sender.to_string(), bytes.len()),
+            Self::AgentRemoved(addr) => write!(f, "AgentRemoved<{}>", addr.to_string()),
+            Self::Shutdown => write!(f, "Shutdown"),
         }
     }
 }

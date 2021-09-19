@@ -208,8 +208,8 @@ impl<A: ToAddress + Clone> Router<A> {
                             continue;
                         }
                     };
-                    tx.send(AgentMsg::Shutdown).await;
-                    self.unregister(sender);
+                    let _ = tx.send(AgentMsg::Shutdown).await;
+                    self.unregister(sender).await;
                 }
             }
         }

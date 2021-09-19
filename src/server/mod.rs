@@ -148,7 +148,10 @@ async fn spawn_reader<A, R>(
                                     },
                                 ) {
                                     Ok(_) => continue,
-                                    Err(e) => break 'msg false,
+                                    Err(e) => {
+                                        error!("failed to send message to router: {:?}", e);
+                                        break 'msg false
+                                    }
                                 }
                             }
                             Ok(None) => break 'msg true,
@@ -210,7 +213,7 @@ where
 
     pub async fn recv(&mut self) -> Result<()> {
         if let Message::Value(framed_message, _) = self.agent.recv().await? {
-            self.writer.write_all(&framed_message.0).await;
+            self.writer.write_all(&framed_message.0).await?;
         }
         Ok(())
     }
