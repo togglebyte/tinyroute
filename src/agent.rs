@@ -1,15 +1,14 @@
 //! Agents receive messages from the router, and communicate with other 
-//! agents via the [`crate::router::Router`], by sending a message to an [`crate::ToAddress`]
+//! Agents via the [`crate::router::Router`], by sending a message to an [`crate::ToAddress`]
 //!
 //! Remote agents receive input over the network and requires 
 //! a [`crate::agent::Serializer`] and a [`crate::agent::Deserializer`].
 //!
-//! ## Example: creating a remote agent
+//! ## Example: creating an agent
 //!
 //! ```
 //! use tinyroute::ToAddress;
 //! # use tinyroute::Router;
-//! # use tinyroute::agent::{Serializer, Deserializer};
 //!
 //! #[derive(Debug, Clone, PartialEq, Eq, std::hash::Hash)]
 //! enum Address {
@@ -24,62 +23,16 @@
 //!     # }
 //! }
 //!
-//! # fn run<T, Ser, De> (
+//! # fn run<T> (
 //! #     mut router: Router<Address>,
-//! #     serializer: Ser,
-//! #     deserializer: De
 //! # )
 //! # where 
-//! #     T: Send + 'static + serde::Serialize + serde::de::DeserializeOwned,
-//! #     Ser: Serializer<T>,
-//! #     De: Deserializer<T>,
+//! #     T: Send + 'static
 //! # {
 //! let capacity = 100;
-//! let agent = router.new_remote_agent(
+//! let agent = router.new_agent::<T>(
 //!     capacity,
 //!     Address::Id(0),
-//!     serializer,
-//!     deserializer,
-//! );
-//! # }
-//! ```
-//!
-//! ## Example: creating a local agent
-//!
-//! ```
-//! # use tinyroute::ToAddress;
-//! # use tinyroute::Router;
-//! # use tinyroute::agent::{Serializer, Deserializer};
-//! # #[derive(Debug, Clone, PartialEq, Eq, std::hash::Hash)]
-//! # enum Address {
-//! #     Id(usize),
-//! #     Logger,
-//! # }
-//! # impl ToAddress for Address {
-//! #     // impl to address
-//! #     fn from_bytes(bytes: &[u8]) -> Option<Self> {
-//! #         None
-//! #     }
-//! # }
-//! # fn run<T, Ser, De> (
-//! #     mut router: Router<Address>,
-//! #     serializer: Ser,
-//! #     deserializer: De
-//! # )
-//! # where 
-//! #     T: Send + 'static + serde::Serialize + serde::de::DeserializeOwned,
-//! #     Ser: Serializer<T>,
-//! #     De: Deserializer<T>,
-//! # {
-//! # let capacity = 100;
-//! struct Message {
-//!     id: usize,
-//!     body: String,
-//! }
-//!
-//! let agent = router.new_local_agent::<Message>(
-//!     capacity,
-//!     Address::Id(1),
 //! );
 //! # }
 //! ```
@@ -87,7 +40,7 @@
 //! ## Example: sending a message
 //!
 //! ```
-//! use tinyroute::agent::{Agent, Local};
+//! use tinyroute::agent::Agent;
 //! # use tinyroute::ToAddress;
 //! # use tinyroute::Router;
 //! # #[derive(Debug, Clone, PartialEq, Eq, std::hash::Hash)]
@@ -101,7 +54,7 @@
 //! #         None
 //! #     }
 //! # }
-//! # fn run(agent: Agent<Local<String, Address>, Address>) {
+//! # fn run(agent: Agent<String, Address>) {
 //!
 //! let message = "hi, how are you".to_string();
 //! agent.send(Address::Id(10), message);
