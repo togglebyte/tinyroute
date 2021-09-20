@@ -69,9 +69,9 @@ pub type ServerFuture<'a, T, U> = Pin<Box<dyn Future<Output = Result<(T, U)>> + 
 /// ```
 /// use tinyroute::server::{Server, TcpListener};
 ///
-///
 /// #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 /// struct Address(usize); 
+///
 /// # impl tinyroute::ToAddress for Address {
 /// #   fn from_bytes(_: &[u8]) -> Option<Self> { None }
 /// # }
@@ -79,6 +79,7 @@ pub type ServerFuture<'a, T, U> = Pin<Box<dyn Future<Output = Result<(T, U)>> + 
 /// let tcp_listener = TcpListener::bind("127.0.0.1:5000").await.unwrap();
 /// let mut server = Server::new(tcp_listener);
 /// let mut id = 0;
+///
 /// while let Some(connection) = server.next(
 ///     router.router_tx(),
 ///     Address(id), 
@@ -109,7 +110,7 @@ impl<L: Listener> Server<L> {
 
         // Register the agent
         let (transport_tx, transport_rx) = mpsc::channel(cap);
-        router_tx.register_agent(address.clone(), transport_tx).ok()?;
+        router_tx.register_agent(address.clone(), transport_tx).await.ok()?;
         let agent =
             Agent::new(router_tx.clone(), address.clone(), transport_rx);
 
@@ -160,8 +161,7 @@ async fn spawn_reader<A, R>(
                                 };
 
                                 let payload = Payload::new(index, msg);
-                                let bytes =
-                                    Bytes::from(payload.data().to_vec());
+                                let bytes = Bytes::from(payload.data().to_vec());
 
                                 match router_tx.send(
                                     RouterMessage::RemoteMessage {

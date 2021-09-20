@@ -32,6 +32,12 @@ pub enum Error {
 
     #[error("Can not convert a remote message to a local message")]
     InvalidMessageConversion,
+
+    #[error("Missing sender from the payload")]
+    MissingSender,
+
+    #[error("Address already registered")]
+    AddressRegistered,
 }
 
 impl<A: ToAddress> From<mpsc::error::SendError<AgentMsg<A>>> for Error {

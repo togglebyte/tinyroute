@@ -1,4 +1,4 @@
-//! Agents receive messages from the router, and communicate with other 
+//! Agents receive messages from the router, and communicate with other
 //! Agents via the [`crate::router::Router`], by sending a message to an [`crate::ToAddress`]
 //!
 //! Remote agents receive input over the network.
@@ -25,7 +25,7 @@
 //! # fn run<T> (
 //! #     mut router: Router<Address>,
 //! # )
-//! # where 
+//! # where
 //! #     T: Send + 'static
 //! # {
 //! let capacity = 100;
@@ -59,15 +59,46 @@
 //! agent.send(Address::Id(10), message);
 //! # }
 //! ```
+//!
+//! ## Example: receiving a message
+//!
+//! ```
+//! use tinyroute::agent::{Agent, Message};
+//! # use tinyroute::ToAddress;
+//! # use tinyroute::Router;
+//! # #[derive(Debug, Clone, PartialEq, Eq, std::hash::Hash)]
+//! # enum Address {
+//! #     Id(usize),
+//! #     Logger,
+//! # }
+//! # impl ToAddress for Address {
+//! #     // impl to address
+//! #     fn from_bytes(bytes: &[u8]) -> Option<Self> {
+//! #         None
+//! #     }
+//! # }
+//! # async fn run(mut agent: Agent<String, Address>) {
+//!
+//! while let Ok(msg) = agent.recv().await {
+//!     match msg {
+//!         Message::Value(value, sender) => eprintln!("message received: {} from {}", value, sender.to_string()),
+//!         Message::RemoteMessage(bytes, sender) => eprintln!("{} sent {} bytes", sender.to_string(), bytes.len()),
+//!         Message::Shutdown => break,
+//!         Message::AgentRemoved(address) => eprintln!("Agent {} was removed, and we care", address.to_string()),
+//!     }
+//! }
+//! # }
+//! ```
 use std::any::Any;
+use std::fmt::{Display, Formatter, Result as DisplayResult};
 use std::marker::PhantomData;
-use std::fmt::{Formatter, Display, Result as DisplayResult};
 
 use bytes::Bytes;
 use tokio::sync::mpsc;
 
+use crate::bridge::BridgeMessageOut;
 use crate::errors::{Error, Result};
-use crate::router::{RouterMessage, RouterTx, ToAddress};
+use crate::router::{RouterMessage, RouterTx, ToAddress, AddressToBytes};
 
 // -----------------------------------------------------------------------------
 //     - Any message -
@@ -100,10 +131,12 @@ pub enum Message<T: 'static, A: ToAddress> {
 impl<T: Clone + 'static, A: ToAddress> Clone for Message<T, A> {
     fn clone(&self) -> Self {
         match self {
-            Self::RemoteMessage(bytes, addr) => Self::RemoteMessage(bytes.clone(), addr.clone()),
+            Self::RemoteMessage(bytes, addr) => {
+                Self::RemoteMessage(bytes.clone(), addr.clone())
+            }
             Self::Value(val, addr) => Self::Value(val.clone(), addr.clone()),
             Self::AgentRemoved(addr) => Self::AgentRemoved(addr.clone()),
-            Self::Shutdown => Self::Shutdown
+            Self::Shutdown => Self::Shutdown,
         }
     }
 }
@@ -111,9 +144,18 @@ impl<T: Clone + 'static, A: ToAddress> Clone for Message<T, A> {
 impl<T: Display + 'static, A: ToAddress> Display for Message<T, A> {
     fn fmt(&self, f: &mut Formatter<'_>) -> DisplayResult {
         match self {
-            Self::Value(val, sender) => write!(f, "{} > Value<{}>", sender.to_string(), val),
-            Self::RemoteMessage(bytes, sender) => write!(f, "Remote({}) > Bytes({})", sender.to_string(), bytes.len()),
-            Self::AgentRemoved(addr) => write!(f, "AgentRemoved<{}>", addr.to_string()),
+            Self::Value(val, sender) => {
+                write!(f, "{} > Value<{}>", sender.to_string(), val)
+            }
+            Self::RemoteMessage(bytes, sender) => write!(
+                f,
+                "Remote({}) > Bytes({})",
+                sender.to_string(),
+                bytes.len()
+            ),
+            Self::AgentRemoved(addr) => {
+                write!(f, "AgentRemoved<{}>", addr.to_string())
+            }
             Self::Shutdown => write!(f, "Shutdown"),
         }
     }
@@ -132,7 +174,9 @@ pub(crate) enum AgentMsg<A: ToAddress> {
 impl<A: ToAddress> AgentMsg<A> {
     fn to_local_message<U: 'static>(self) -> Result<Message<U, A>> {
         match self {
-            Self::RemoteMessage(bytes, sender) => Ok(Message::RemoteMessage(bytes, sender)),
+            Self::RemoteMessage(bytes, sender) => {
+                Ok(Message::RemoteMessage(bytes, sender))
+            }
             Self::AgentRemoved(address) => Ok(Message::AgentRemoved(address)),
             Self::Message(val, sender) => match val.0.downcast() {
                 Ok(val) => Ok(Message::Value(*val, sender)),
@@ -163,8 +207,7 @@ impl<S, A: ToAddress> Drop for Agent<S, A> {
     }
 }
 
-impl<T: Send + 'static, A: ToAddress> Agent<T, A>
-{
+impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
     pub(crate) fn new(
         router_tx: RouterTx<A>,
         address: A,
@@ -173,10 +216,15 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A>
         Self { router_tx, rx, address, _p: PhantomData }
     }
 
-    pub fn create_agent<U: Send + 'static>(&self, address: A, cap: usize) -> Result<Agent<U, A>> {
+    pub async fn new_agent<U: Send + 'static>(
+        &self,
+        address: A,
+        cap: usize,
+    ) -> Result<Agent<U, A>> {
         let (transport_tx, transport_rx) = mpsc::channel(cap);
-        let agent = Agent::new(self.router_tx.clone(), address.clone(), transport_rx);
-        self.router_tx.register_agent(address, transport_tx)?;
+        let agent =
+            Agent::new(self.router_tx.clone(), address.clone(), transport_rx);
+        self.router_tx.register_agent(address, transport_tx).await?;
         Ok(agent)
     }
 
@@ -200,13 +248,27 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A>
         &self.address
     }
 
-    // TODO: remove this comment impl<T: Send + 'static, A: ToAddress> Agent<Local<T, A>, A> {
     pub async fn recv(&mut self) -> Result<Message<T, A>> {
         let msg = self.rx.recv().await.ok_or(Error::ChannelClosed)?;
         msg.to_local_message()
     }
 
-    pub fn send<U: Send + 'static>(&self, recipient: A, message: U) -> Result<()> {
+    // // TODO: is this even used? Remove if it's not used by 2021-09-25
+    // pub async fn recv_routed(&mut self) -> Result<Message<T, A>> {
+    //     let msg = self.rx.recv().await.ok_or(Error::ChannelClosed)?;
+    //     if let AgentMsg::RemoteMessage(bytes, address) =  msg {
+    //         // translate the remote message to a routed message
+    //         todo!("convert the remote to a RoutedMessage")
+    //     } else {
+    //         msg.to_local_message()
+    //     }
+    // }
+
+    pub fn send<U: Send + 'static>(
+        &self,
+        recipient: A,
+        message: U,
+    ) -> Result<()> {
         let router_msg = RouterMessage::Message {
             recipient,
             sender: self.address.clone(),
@@ -229,5 +291,24 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A>
     pub fn shutdown(&self) {
         let router_msg = RouterMessage::Shutdown(self.address.clone());
         let _ = self.router_tx.send(router_msg);
+    }
+}
+
+
+impl<T: Send + 'static, A: ToAddress + AddressToBytes> Agent<T, A> {
+    pub fn send_bridged(
+        &self,
+        bridge_address: A,
+        remote: Bytes,
+        message: Bytes,
+    ) -> Result<()> {
+        let msg = BridgeMessageOut::new(self.address.clone(), remote, message);
+        let router_msg = RouterMessage::Message {
+            sender: self.address.clone(),
+            recipient: bridge_address,
+            msg: AnyMessage::new(msg),
+        };
+        self.router_tx.send(router_msg)?;
+        Ok(())
     }
 }

@@ -1,12 +1,94 @@
+//! A [`Bridge`] is a connection between [`crate::Router`]s. 
 use std::time::Duration;
+
+use bytes::Bytes;
+use log::{error, info};
 
 use crate::agent::{Agent, Message};
 use crate::client::{
     connect, ClientMessage, ClientReceiver, ClientSender, TcpClient,
 };
-use crate::frame::Frame;
-use crate::ToAddress;
-use log::{error, info};
+use crate::errors::{Error, Result};
+use crate::frame::{Frame, FramedMessage};
+use crate::{AddressToBytes, ToAddress};
+
+#[derive(Debug, Clone)]
+pub struct BridgeMessageOut(FramedMessage);
+
+/// An outgoing bridge message, sent through the bridge.
+///
+/// ```
+/// # use tinyroute::Bytes;
+/// # fn run<A: tinyroute::ToAddress + tinyroute::AddressToBytes>(agent: tinyroute::Agent<(), A>, bridge_address: A) {
+/// let remote_address = b"some_channel".to_vec();
+/// let message = b"hello world".to_vec();
+/// agent.send_bridged(bridge_address, remote_address.into(), message.into());
+/// # }
+/// ```
+impl BridgeMessageOut {
+    pub fn new<T: AddressToBytes>(
+        sender: T,
+        remote_recipient: Bytes,
+        bytes: Bytes,
+    ) -> Self {
+        let sender_bytes = sender.to_bytes();
+        // Sender + | + recipient + | + message
+        let mut payload = Vec::with_capacity(
+            sender_bytes.len() + 1 + remote_recipient.len() + 1 + bytes.len(),
+        );
+        payload.extend_from_slice(&remote_recipient);
+        payload.push(b'|');
+        payload.extend_from_slice(&sender_bytes);
+        payload.push(b'|');
+        payload.extend_from_slice(&bytes);
+        let framed_message = Frame::frame_message(&payload);
+        Self(framed_message)
+    }
+}
+
+/// An incoming bridge message.
+///
+/// ```
+/// use tinyroute::bridge::BridgeMessageIn;
+///
+/// # use tinyroute::Bytes;
+/// # fn run<A: tinyroute::ToAddress + tinyroute::AddressToBytes>(agent: tinyroute::Agent<(), A>, bridge_address: A) {
+/// let payload = b"a_remote_address|a message".to_vec();
+/// let message = BridgeMessageIn::decode(payload.into()).unwrap();
+/// assert_eq!(message.sender.as_ref(), b"a_remote_address");
+/// assert_eq!(message.message.as_ref(), b"a message");
+/// # }
+/// ```
+pub struct BridgeMessageIn {
+    /// The address of the origin/sender of the message.
+    pub sender: Bytes,
+    /// The message
+    pub message: Bytes,
+}
+
+impl BridgeMessageIn {
+    pub fn decode(input: Bytes) -> Result<BridgeMessageIn> {
+        let sender_address = input
+            .iter()
+            .take_while(|b| (**b as char) != '|')
+            .cloned()
+            .collect::<Vec<u8>>();
+
+        if sender_address.len() == input.len() {
+            return Err(Error::MissingSender);
+        }
+
+        let offset = sender_address.len() + 1;
+        if offset >= input.len() {
+            return Err(Error::MissingSender);
+        }
+
+        let sender_address = Bytes::from(sender_address);
+        let bytes = Bytes::from(input[offset..].to_vec());
+
+        Ok(Self { sender: sender_address, message: bytes })
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum Reconnect {
@@ -41,7 +123,10 @@ async fn connect_to(
                         };
                         let sleep = Duration::from_secs(*secs);
                         *seconds *= 2;
-                        *reconnect = Reconnect::Exponential { seconds: *seconds, max: *max };
+                        *reconnect = Reconnect::Exponential {
+                            seconds: *seconds,
+                            max: *max,
+                        };
                         sleep
                     }
                 };
@@ -77,8 +162,8 @@ impl<T> std::fmt::Display for Action<T> {
     }
 }
 
-pub struct Bridge<'addr, T: 'static, A: ToAddress> {
-    agent: Agent<T, A>,
+pub struct Bridge<'addr, A: ToAddress> {
+    agent: Agent<BridgeMessageOut, A>,
     addr: &'addr str,
     reconnect: Reconnect,
     heartbeat: Option<Duration>,
@@ -86,9 +171,9 @@ pub struct Bridge<'addr, T: 'static, A: ToAddress> {
     retry: Retry,
 }
 
-impl<'addr, T: Send + 'static, A: ToAddress> Bridge<'addr, T, A> {
+impl<'addr, A: ToAddress> Bridge<'addr, A> {
     pub fn new(
-        agent: Agent<T, A>,
+        agent: Agent<BridgeMessageOut, A>,
         addr: &'addr str,
         reconnect: Reconnect,
         retry: Retry,
@@ -107,7 +192,7 @@ impl<'addr, T: Send + 'static, A: ToAddress> Bridge<'addr, T, A> {
         .await;
     }
 
-    pub async fn run(&mut self) -> Option<Message<T, A>> {
+    pub async fn run(&mut self) -> Option<Message<BridgeMessageOut, A>> {
         // Rx here is the incoming data from the network connection.
         // This should never do anything but return `None` once the connection is closed.
         // No data should be sent to this guy
@@ -160,18 +245,15 @@ impl<'addr, T: Send + 'static, A: ToAddress> Bridge<'addr, T, A> {
             }
         };
 
-        eprintln!("Trying to send the message...");
+        if let Message::Value(BridgeMessageOut(framed_message), _) = msg {
+            // if you can read this, know that you are wonderful
+            // let (sender, message): (A, _) = BridgeMessage::decode(framed_message.0).unwrap();
 
-        // There isn't much point to the `sender` here,
-        // however it might be an idea to attach it to the message, 
-        // along with the host. So it's sender@host.
-        if let Message::RemoteMessage(bytes, _sender) = msg {
-            eprintln!("{:?}", std::str::from_utf8(&bytes).unwrap());
-
-            // Send framed messages only!
-            let framed_message = Frame::frame_message(&bytes);
-            let msg = ClientMessage::Payload(framed_message);
-            let res = bridge_output_tx.send(msg).await;
+            // // Send framed messages only!
+            // let msg = ClientMessage::Payload(framed_message);
+            let res = bridge_output_tx
+                .send(ClientMessage::Payload(framed_message))
+                .await;
             eprintln!("Mesage sent: > {:?}", res.is_ok());
             None
         } else {

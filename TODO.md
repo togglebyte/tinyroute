@@ -6,6 +6,8 @@
       If the bridge connection is dropped and the message
       buffer is full, start timing out messages, and 
       eventually drop the bridge.
+* [ ] Allow for the bridge to dispose of messages, 
+      to prevent a bridge from blocking the entire system.
 * [X] BUG: messages sent over the bridge isn't being sent 
       on resume.
 

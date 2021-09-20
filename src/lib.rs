@@ -11,5 +11,6 @@ pub mod server;
 // -----------------------------------------------------------------------------
 //     - Reexportes -
 // -----------------------------------------------------------------------------
-pub use router::{Router, ToAddress};
+pub use router::{Router, ToAddress, AddressToBytes};
 pub use bytes::Bytes;
+pub use agent::{Agent, Message};

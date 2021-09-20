@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use bytes::Bytes;
 use log::{error, info, warn};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::agent::{Agent, AgentMsg, AnyMessage};
 use crate::errors::{Error, Result};
@@ -16,18 +16,17 @@ pub struct RouterTx<A: ToAddress>(
 );
 
 impl<A: ToAddress> RouterTx<A> {
-    pub(crate) fn register_agent(
+    pub(crate) async fn register_agent(
         &self,
         address: A,
         tx: mpsc::Sender<AgentMsg<A>>,
     ) -> Result<()> {
-        match self.0.send(RouterMessage::Register(address, tx)) {
-            Ok(()) => Ok(()),
-            Err(_) => {
-                error!("Failed to register local agent");
-                Err(Error::RegisterAgentFailed)
-            }
-        }
+        let (success_tx, success_rx) = oneshot::channel();
+        self.0
+            .send(RouterMessage::Register(address, tx, success_tx))
+            .map_err(|_| Error::RegisterAgentFailed)?;
+        success_rx.await.map_err(|_| Error::RegisterAgentFailed)?;
+        Ok(())
     }
 
     pub(crate) fn send(&self, msg: RouterMessage<A>) -> Result<()> {
@@ -38,12 +37,17 @@ impl<A: ToAddress> RouterTx<A> {
     }
 }
 
+/// Convert bytes into an address, get a string representation of an address.
 pub trait ToAddress: Send + Clone + Eq + std::hash::Hash + 'static {
     fn from_bytes(bytes: &[u8]) -> Option<Self>;
 
     fn to_string(&self) -> String {
         "[not implemented for this address]".into()
     }
+}
+
+pub trait AddressToBytes {
+    fn to_bytes(&self) -> Vec<u8>;
 }
 
 // -----------------------------------------------------------------------------
@@ -54,7 +58,7 @@ pub(crate) enum RouterMessage<A: ToAddress> {
     // The only thing that should be sending these remote messages
     // are the reader halves of a socket!
     RemoteMessage { recipient: A, sender: A, bytes: Bytes },
-    Register(A, mpsc::Sender<AgentMsg<A>>),
+    Register(A, mpsc::Sender<AgentMsg<A>>, oneshot::Sender<()>),
     Track { from: A, to: A },
     Unregister(A),
     Shutdown(A),
@@ -80,7 +84,7 @@ impl<A: ToAddress + Clone> Router<A> {
         &mut self,
         cap: usize,
         address: A,
-    ) -> Option<Agent<T, A>> {
+    ) -> Result<Agent<T, A>> {
         let (tx, transport_rx) = mpsc::channel(cap);
         let agent = Agent::new(self.router_tx(), address.clone(), transport_rx);
         if self.channels.contains_key(&address) {
@@ -88,10 +92,10 @@ impl<A: ToAddress + Clone> Router<A> {
                 "There is already an agent registered at \"{}\"",
                 address.to_string()
             );
-            return None;
+            return Err(Error::AddressRegistered);
         }
         self.channels.insert(address, tx);
-        Some(agent)
+        Ok(agent)
     }
 
     pub fn router_tx(&self) -> RouterTx<A> {
@@ -172,7 +176,7 @@ impl<A: ToAddress + Clone> Router<A> {
                         self.channels.remove(&recipient);
                     }
                 }
-                RouterMessage::Register(address, tx) => {
+                RouterMessage::Register(address, tx, success_tx) => {
                     if self.channels.contains_key(&address) {
                         warn!(
                             "There is already an agent registered at \"{}\"",
@@ -183,6 +187,7 @@ impl<A: ToAddress + Clone> Router<A> {
                     let address_str = address.to_string();
                     self.channels.insert(address, tx);
                     info!("Registered \"{}\"", address_str);
+                    let _ = success_tx.send(());
                 }
                 RouterMessage::Track { from, to } => {
                     let tracked =
