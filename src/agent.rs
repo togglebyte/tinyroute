@@ -81,10 +81,10 @@
 //!
 //! while let Ok(msg) = agent.recv().await {
 //!     match msg {
-//!         Message::Value(value, sender) => eprintln!("message received: {} from {}", value, sender.to_string()),
-//!         Message::RemoteMessage(bytes, sender) => eprintln!("{} sent {} bytes", sender.to_string(), bytes.len()),
+//!         Message::Value(value, sender) => println!("message received: {} from {}", value, sender.to_string()),
+//!         Message::RemoteMessage(bytes, sender) => println!("{} sent {} bytes", sender.to_string(), bytes.len()),
 //!         Message::Shutdown => break,
-//!         Message::AgentRemoved(address) => eprintln!("Agent {} was removed, and we care", address.to_string()),
+//!         Message::AgentRemoved(address) => println!("Agent {} was removed, and we care", address.to_string()),
 //!     }
 //! }
 //! # }
@@ -276,6 +276,12 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
         };
         self.router_tx.send(router_msg)?;
         Ok(())
+    }
+
+    /// This is used for debugging, to print 
+    /// the current list of registered channels on a router.
+    pub fn print_channels(&self) {
+        let _ = self.router_tx.send(RouterMessage::PrintChannels);
     }
 
     pub fn send_remote(&self, recipient: A, bytes: Bytes) -> Result<()> {

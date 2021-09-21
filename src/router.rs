@@ -62,6 +62,7 @@ pub(crate) enum RouterMessage<A: ToAddress> {
     Track { from: A, to: A },
     Unregister(A),
     Shutdown(A),
+    PrintChannels,
 }
 
 // -----------------------------------------------------------------------------
@@ -126,6 +127,11 @@ impl<A: ToAddress + Clone> Router<A> {
     pub async fn run(mut self) {
         while let Some(msg) = self.rx.recv().await {
             match msg {
+                RouterMessage::PrintChannels => {
+                    for (k, _) in &self.channels {
+                        println!("Chan: {}", k.to_string());
+                    }
+                }
                 RouterMessage::Message { sender, recipient, msg } => {
                     let tx = match self.channels.get(&recipient) {
                         Some(val) => val,

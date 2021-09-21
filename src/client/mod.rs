@@ -95,6 +95,7 @@ pub fn connect(
 }
 
 async fn run_heartbeat(freq: Duration, writer_tx: mpsc::Sender<ClientMessage>) {
+    info!("Start beat");
     // Heart beat should never be less than a second
     assert!(
         freq.as_millis() > 1000,
@@ -104,7 +105,7 @@ async fn run_heartbeat(freq: Duration, writer_tx: mpsc::Sender<ClientMessage>) {
     loop {
         tokio::time::sleep(freq - jitter()).await;
         if let Err(e) = writer_tx.send(ClientMessage::Heartbeat).await {
-            error!("Failed to write heartbeat: {:?}", e);
+            error!("Failed to send heartbeat to writer: {:?}", e);
             break;
         }
     }
@@ -134,13 +135,8 @@ async fn use_reader(
                 Ok(0) => break 'read,
                 Ok(_) => match frame.try_msg() {
                     Ok(None) => break 'msg,
-                    Ok(Some(FrameOutput::Heartbeat)) => {
-                        error!("received a heartbeat on the reader");
-                    }
-                    Ok(Some(FrameOutput::Message(payload))) => {
-                        eprintln!("sending payload");
-                        drop(output_tx.send(payload).await)
-                    }
+                    Ok(Some(FrameOutput::Heartbeat)) => error!("received a heartbeat on the reader"),
+                    Ok(Some(FrameOutput::Message(payload))) => drop(output_tx.send(payload).await),
                     Err(Error::MalformedHeader) => {}
                     Err(_) => unreachable!(),
                 },

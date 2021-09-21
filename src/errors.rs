@@ -38,6 +38,9 @@ pub enum Error {
 
     #[error("Address already registered")]
     AddressRegistered,
+
+    #[error("Bridgemalarkey")]
+    Bridge(#[from] crate::bridge::BridgeError),
 }
 
 impl<A: ToAddress> From<mpsc::error::SendError<AgentMsg<A>>> for Error {

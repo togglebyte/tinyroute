@@ -12,8 +12,18 @@ use crate::errors::{Error, Result};
 use crate::frame::{Frame, FramedMessage};
 use crate::{AddressToBytes, ToAddress};
 
+/// An outgoing message from a [`Bridge`]
 #[derive(Debug, Clone)]
 pub struct BridgeMessageOut(FramedMessage);
+
+#[derive(thiserror::Error, Debug)]
+pub enum BridgeError {
+    #[error("Failed to reconnect the bridge")]
+    Reconnect,
+
+    #[error("Failed to communicate with the underlying connection")]
+    Connection,
+}
 
 /// An outgoing bridge message, sent through the bridge.
 ///
@@ -108,10 +118,13 @@ async fn connect_to(
     reconnect: &mut Reconnect,
     heartbeat: &mut Option<Duration>,
     mut retry: Retry,
-) -> Option<(ClientSender, ClientReceiver)> {
-    let tcp_client = loop {
+) -> Result<(ClientSender, ClientReceiver)> {
+    loop {
         match TcpClient::connect(addr.as_ref()).await {
-            Ok(c) => break Some(c),
+            Ok(c) => {
+                info!("Bridge connected");
+                break Ok(connect(c, *heartbeat));
+            }
             Err(e) => {
                 error!("failed to connect. reason: {:?}", e);
                 let sleep_time = match reconnect {
@@ -131,33 +144,14 @@ async fn connect_to(
                     }
                 };
                 match retry {
-                    Retry::Count(0) => break None,
-                    Retry::Never => break None,
+                    Retry::Count(0) => break Err(BridgeError::Reconnect.into()),
+                    Retry::Never => break Err(BridgeError::Reconnect.into()),
                     Retry::Count(ref mut n) => *n -= 1,
                     Retry::Forever => {}
                 }
                 tokio::time::sleep(sleep_time).await;
                 info!("retrying...");
             }
-        }
-    };
-
-    Some(connect(tcp_client?, *heartbeat))
-}
-
-// This is a bit silly but I'm pretty tired
-enum Action<T> {
-    Message(T),
-    Reconnect,
-    Continue,
-}
-
-impl<T> std::fmt::Display for Action<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Message(_) => write!(f, "Message"),
-            Self::Reconnect => write!(f, "Reconnect"),
-            Self::Continue => write!(f, "Continue"),
         }
     }
 }
@@ -182,82 +176,52 @@ impl<'addr, A: ToAddress> Bridge<'addr, A> {
         Self { agent, addr, reconnect, heartbeat, retry, connection: None }
     }
 
-    async fn reconnect(&mut self) {
-        self.connection = connect_to(
+    async fn reconnect(&mut self) -> Result<(ClientSender, ClientReceiver)> {
+        connect_to(
             self.addr,
             &mut self.reconnect,
             &mut self.heartbeat,
             self.retry,
         )
-        .await;
+        .await
     }
 
-    pub async fn run(&mut self) -> Option<Message<BridgeMessageOut, A>> {
+    pub async fn exec(&mut self) -> Result<Option<Message<BridgeMessageOut, A>>> {
         // Rx here is the incoming data from the network connection.
         // This should never do anything but return `None` once the connection is closed.
-        // No data should be sent to this guy
         if let None = self.connection {
-            self.reconnect().await;
+            self.connection = Some(self.reconnect().await?);
         }
 
-        if self.connection.is_none() {
-            return Some(Message::Shutdown);
-        }
+        let (bridge_output_tx, rx_client_closed) = self.connection.as_mut().expect("This is okay, because we check the connection above");
 
-        let (bridge_output_tx, rx_client_closed) =
-            self.connection.as_mut().unwrap();
-
-        let action = tokio::select! {
+        // If the `rx_client` is closed, then reconnect.
+        // If the message from the `agent` is invalid, continue and try the next one
+        // If the message is okay then return that
+        let message = tokio::select! {
             is_closed = rx_client_closed.recv() => {
                 let is_closed = is_closed.is_none();
                 match is_closed {
-                    true => Action::Reconnect,
-                    false => Action::Continue,
+                    true => {
+                        self.connection = Some(self.reconnect().await?);
+                        return Ok(None);
+                    }
+                    false => return Ok(None), // got a message on the connection rx,
+                                              // and we shouldn't be getting anything on there for
+                                              // now.
                 }
             },
-            msg = self.agent.recv() => {
-                match msg {
-                    Ok(m) => Action::Message(m),
-                    Err(e) => {
-                        error!("failed to receive message: {:?}", e);
-                        Action::Continue
-                    }
-                }
-            }
+            msg = self.agent.recv() => msg?,
         };
 
-        eprintln!("--- Action> {}", action);
-
-        let msg = match action {
-            Action::Message(m) => {
-                eprintln!("> Message");
-                m
-            }
-            Action::Reconnect => {
-                eprintln!("> Reconnect...");
-                self.reconnect().await;
-                // self.connection = Some(connect_to(self.addr, &mut self.reconnect, &mut self.heartbeat).await);
-                return None;
-            }
-            Action::Continue => {
-                eprintln!("> Continue");
-                return None;
-            }
-        };
-
-        if let Message::Value(BridgeMessageOut(framed_message), _) = msg {
+        if let Message::Value(BridgeMessageOut(framed_message), _) = message {
             // if you can read this, know that you are wonderful
-            // let (sender, message): (A, _) = BridgeMessage::decode(framed_message.0).unwrap();
-
-            // // Send framed messages only!
-            // let msg = ClientMessage::Payload(framed_message);
-            let res = bridge_output_tx
-                .send(ClientMessage::Payload(framed_message))
-                .await;
-            eprintln!("Mesage sent: > {:?}", res.is_ok());
-            None
+            match bridge_output_tx.send(ClientMessage::Payload(framed_message)).await {
+                Err(_e) => Err(BridgeError::Connection.into()),
+                Ok(()) => Ok(None),
+            }
         } else {
-            Some(msg)
+            Ok(Some(message))
         }
     }
 }
