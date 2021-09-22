@@ -11,7 +11,7 @@ use crate::errors::Result;
 /// # }
 /// ```
 pub struct TcpClient {
-    inner: TcpStream
+    inner: TcpStream,
 }
 
 impl TcpClient {

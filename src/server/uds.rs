@@ -36,7 +36,14 @@ impl Listener for UdsListener {
 
     fn accept(&mut self) -> ServerFuture<'_, Self::Reader, Self::Writer> {
         let future = async move {
-            Ok(self.inner.accept().await?.0.into_split())
+            let (socket, addr) = self.inner.accept().await?;
+            let (reader, writer) = socket.into_split();
+            let addr = addr
+                .as_pathname()
+                .and_then(Path::to_str)
+                .unwrap_or_else(|| "[no address]")
+                .to_string();
+            Ok((reader, writer, addr))
         };
 
         Box::pin(future)

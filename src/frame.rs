@@ -26,7 +26,7 @@ pub enum FrameOutput {
 /// A message that has a header byte and a content length
 /// prefixed to it.
 #[derive(Debug, Clone)]
-pub struct FramedMessage(pub(crate) Bytes);
+pub struct FramedMessage(pub Bytes);
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]

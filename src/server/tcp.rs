@@ -34,7 +34,9 @@ impl Listener for TcpListener {
 
     fn accept(&mut self) -> ServerFuture<'_, Self::Reader, Self::Writer> {
         let future = async move {
-            Ok(self.inner.accept().await?.0.into_split())
+            let (socket, addr) = self.inner.accept().await?;
+            let (reader, writer) = socket.into_split();
+            Ok((reader, writer, addr.to_string()))
         };
 
         Box::pin(future)

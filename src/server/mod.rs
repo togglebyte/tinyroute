@@ -62,7 +62,8 @@ pub trait Listener: Sync {
 }
 
 /// Because writing this entire trait malarkey is messy!
-pub type ServerFuture<'a, T, U> = Pin<Box<dyn Future<Output = Result<(T, U)>> + Send + 'a>>;
+pub type ServerFuture<'a, T, U> =
+    Pin<Box<dyn Future<Output = Result<(T, U, String)>> + Send + 'a>>;
 
 /// Accept incoming connections and provide agents as an abstraction.
 ///
@@ -70,7 +71,7 @@ pub type ServerFuture<'a, T, U> = Pin<Box<dyn Future<Output = Result<(T, U)>> + 
 /// use tinyroute::server::{Server, TcpListener};
 ///
 /// #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-/// struct Address(usize); 
+/// struct Address(usize);
 ///
 /// # impl tinyroute::ToAddress for Address {
 /// #   fn from_bytes(_: &[u8]) -> Option<Self> { None }
@@ -82,40 +83,57 @@ pub type ServerFuture<'a, T, U> = Pin<Box<dyn Future<Output = Result<(T, U)>> + 
 ///
 /// while let Some(connection) = server.next(
 ///     router.router_tx(),
-///     Address(id), 
-///     None, 
+///     Address(id),
+///     None,
 ///     1024
 /// ).await {
 ///     id += 1;
 /// }
 /// # }
 /// ```
-pub struct Server<L: Listener> {
+pub struct Server<L: Listener, A: Sync + ToAddress> {
     server: L,
+    server_agent: Agent<(), A>,
 }
 
-impl<L: Listener> Server<L> {
-    pub fn new(server: L) -> Self {
-        Self { server }
+impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
+    pub fn new(server: L, server_agent: Agent<(), A>) -> Self {
+        Self { server, server_agent, }
     }
 
-    pub async fn next<A: Sync + ToAddress>(
+    pub async fn next(
         &mut self,
         router_tx: RouterTx<A>,
-        address: A,
+        connection_address: A,
         timeout: Option<Duration>,
         cap: usize,
     ) -> Option<Connection<A, <L as Listener>::Writer>> {
-        let (reader, writer) = self.server.accept().await.ok()?;
+        let (reader, writer, socket_addr) = tokio::select! {
+            server = self.server_agent.recv() => return None,
+            con = self.server.accept() => con.ok()?,
+        };
 
         // Register the agent
         let (transport_tx, transport_rx) = mpsc::channel(cap);
-        router_tx.register_agent(address.clone(), transport_tx).await.ok()?;
-        let agent =
-            Agent::new(router_tx.clone(), address.clone(), transport_rx);
+        router_tx
+            .register_agent(connection_address.clone(), transport_tx)
+            .await
+            .ok()?;
+
+        let agent = Agent::new(
+            router_tx.clone(),
+            connection_address.clone(),
+            transport_rx,
+        );
 
         // Spawn the reader
-        tokio::spawn(spawn_reader(reader, address, router_tx, timeout));
+        tokio::spawn(spawn_reader(
+            reader,
+            connection_address,
+            socket_addr,
+            router_tx,
+            timeout,
+        ));
 
         Some(Connection::new(agent, writer))
     }
@@ -124,6 +142,7 @@ impl<L: Listener> Server<L> {
 async fn spawn_reader<A, R>(
     mut reader: R,
     sender: A,
+    socket_addr: String,
     router_tx: RouterTx<A>,
     timeout: Option<Duration>,
 ) where
@@ -161,26 +180,28 @@ async fn spawn_reader<A, R>(
                                 };
 
                                 let payload = Payload::new(index, msg);
-                                let bytes = Bytes::from(payload.data().to_vec());
+                                let bytes =
+                                    Bytes::from(payload.data().to_vec());
 
                                 match router_tx.send(
                                     RouterMessage::RemoteMessage {
                                         bytes,
                                         sender: sender.clone(),
+                                        host: socket_addr.clone(),
                                         recipient: address,
                                     },
                                 ) {
                                     Ok(_) => continue,
                                     Err(e) => {
                                         error!("failed to send message to router: {:?}", e);
-                                        break 'msg false
+                                        break 'msg false;
                                     }
                                 }
                             }
                             Ok(None) => break 'msg true,
                             Err(e) => {
                                 error!("invalid payload. {:?}", e);
-                                break 'msg false
+                                break 'msg false;
                             }
                         }
                     }
@@ -189,7 +210,7 @@ async fn spawn_reader<A, R>(
                             "failed to read from the socket. reason: {:?}",
                             e
                         );
-                        break 'msg false
+                        break 'msg false;
                     }
                 }
             }
@@ -212,7 +233,7 @@ async fn spawn_reader<A, R>(
 
     // Shutdown the agent
     if let Err(e) = router_tx.send(RouterMessage::Shutdown(sender)) {
-        error!("failed to shutdown agent: {:?}", e);
+        error!("failed to shutdown agent: {}", e);
     }
 }
 

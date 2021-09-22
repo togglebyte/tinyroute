@@ -57,12 +57,13 @@ pub(crate) enum RouterMessage<A: ToAddress> {
     Message { recipient: A, sender: A, msg: AnyMessage },
     // The only thing that should be sending these remote messages
     // are the reader halves of a socket!
-    RemoteMessage { recipient: A, sender: A, bytes: Bytes },
+    RemoteMessage { recipient: A, sender: A, bytes: Bytes, host: String },
     Register(A, mpsc::Sender<AgentMsg<A>>, oneshot::Sender<()>),
     Track { from: A, to: A },
     Unregister(A),
     Shutdown(A),
     PrintChannels,
+    ShutdownRouter,
 }
 
 // -----------------------------------------------------------------------------
@@ -127,6 +128,15 @@ impl<A: ToAddress + Clone> Router<A> {
     pub async fn run(mut self) {
         while let Some(msg) = self.rx.recv().await {
             match msg {
+                RouterMessage::ShutdownRouter => {
+                    let mut drain = self.channels.drain();
+                    while let Some((_, tx)) = drain.next() {
+                        tokio::spawn(async move { let _ = tx.send(AgentMsg::Shutdown).await; });
+                    }
+
+                    info!("Shutting down router");
+                    break;
+                }
                 RouterMessage::PrintChannels => {
                     for (k, _) in &self.channels {
                         println!("Chan: {}", k.to_string());
@@ -156,7 +166,7 @@ impl<A: ToAddress + Clone> Router<A> {
                         self.channels.remove(&recipient);
                     }
                 }
-                RouterMessage::RemoteMessage { recipient, sender, bytes } => {
+                RouterMessage::RemoteMessage { recipient, sender, bytes, host } => {
                     let tx = match self.channels.get(&recipient) {
                         Some(tx) => tx,
                         None => {
@@ -169,7 +179,7 @@ impl<A: ToAddress + Clone> Router<A> {
                     };
 
                     if tx
-                        .send(AgentMsg::RemoteMessage(bytes, sender))
+                        .send(AgentMsg::RemoteMessage(bytes, sender, host))
                         .await
                         .is_err()
                     {
@@ -224,5 +234,7 @@ impl<A: ToAddress + Clone> Router<A> {
                 }
             }
         }
+
+        info!("Router shutdown successful");
     }
 }
