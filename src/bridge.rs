@@ -126,7 +126,7 @@ async fn connect_to(
                 break Ok(connect(c, *heartbeat));
             }
             Err(e) => {
-                error!("failed to connect. reason: {:?}", e);
+                error!("failed to connect. reason: {}", e);
                 let sleep_time = match reconnect {
                     Reconnect::Constant(n) => *n,
                     Reconnect::Exponential { seconds, max } => {

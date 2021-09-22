@@ -82,7 +82,7 @@
 //! while let Ok(msg) = agent.recv().await {
 //!     match msg {
 //!         Message::Value(value, sender) => println!("message received: {} from {}", value, sender.to_string()),
-//!         Message::RemoteMessage(bytes, sender) => println!("{} sent {} bytes", sender.to_string(), bytes.len()),
+//!         Message::RemoteMessage(bytes, sender, host) => println!("{}@{} sent {} bytes", sender.to_string(), host, bytes.len()),
 //!         Message::Shutdown => break,
 //!         Message::AgentRemoved(address) => println!("Agent {} was removed, and we care", address.to_string()),
 //!     }

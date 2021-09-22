@@ -105,7 +105,7 @@ async fn run_heartbeat(freq: Duration, writer_tx: mpsc::Sender<ClientMessage>) {
     loop {
         tokio::time::sleep(freq - jitter()).await;
         if let Err(e) = writer_tx.send(ClientMessage::Heartbeat).await {
-            error!("Failed to send heartbeat to writer: {:?}", e);
+            error!("Failed to send heartbeat to writer: {}", e);
             break;
         }
     }
@@ -141,7 +141,7 @@ async fn use_reader(
                     Err(_) => unreachable!(),
                 },
                 Err(e) => {
-                    error!("Connection closed: {:?}", e);
+                    error!("Connection closed: {}", e);
                     break 'read;
                 }
             }
@@ -163,13 +163,13 @@ async fn use_writer(
             ClientMessage::Heartbeat => {
                 let beat = &[crate::frame::Header::Heartbeat as u8];
                 if let Err(e) = writer.write_all(beat).await {
-                    error!("Failed to write heartbeat: {:?}", e);
+                    error!("Failed to write heartbeat: {}", e);
                     break;
                 }
             }
             ClientMessage::Payload(payload) => {
                 if let Err(e) = writer.write_all(&payload.0).await {
-                    error!("Failed to write payload: {:?}", e);
+                    error!("Failed to write payload: {}", e);
                     break;
                 }
             }

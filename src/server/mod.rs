@@ -76,9 +76,10 @@ pub type ServerFuture<'a, T, U> =
 /// # impl tinyroute::ToAddress for Address {
 /// #   fn from_bytes(_: &[u8]) -> Option<Self> { None }
 /// # }
-/// # async fn run(router: tinyroute::Router<Address>) {
+/// # async fn run(mut router: tinyroute::Router<Address>) {
 /// let tcp_listener = TcpListener::bind("127.0.0.1:5000").await.unwrap();
-/// let mut server = Server::new(tcp_listener);
+/// let server_agent = router.new_agent(1024, Address(0)).unwrap();
+/// let mut server = Server::new(tcp_listener, server_agent);
 /// let mut id = 0;
 ///
 /// while let Some(connection) = server.next(
@@ -101,6 +102,7 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
         Self { server, server_agent, }
     }
 
+    /// Produce a [`Connection`]
     pub async fn next(
         &mut self,
         router_tx: RouterTx<A>,
@@ -109,7 +111,7 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
         cap: usize,
     ) -> Option<Connection<A, <L as Listener>::Writer>> {
         let (reader, writer, socket_addr) = tokio::select! {
-            server = self.server_agent.recv() => return None,
+            _ = self.server_agent.recv() => return None,
             con = self.server.accept() => con.ok()?,
         };
 
@@ -136,6 +138,29 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
         ));
 
         Some(Connection::new(agent, writer))
+    }
+
+    /// Consume the [`Server]` and listening for new connections.
+    /// Each new connection is sent to it's own task.
+    ///
+    /// This is useful when letting the router handle the connections,
+    /// and all messages are passed as [`Message::RemoteMessage`].
+    pub async fn run<F: FnMut() -> A>(mut self, router_tx: RouterTx<A>, mut f: F) -> Result<()> {
+        while let Some(mut connection) = self.next(
+            router_tx.clone(),
+            (f)(),
+            None,
+            1024,
+        ).await {
+            tokio::spawn(async move {
+                loop {
+                    if let Err(e) = connection.recv().await {
+                        error!("Connection error: {}", e);
+                    }
+                }
+            });
+        }
+        Ok(())
     }
 }
 
@@ -193,14 +218,14 @@ async fn spawn_reader<A, R>(
                                 ) {
                                     Ok(_) => continue,
                                     Err(e) => {
-                                        error!("failed to send message to router: {:?}", e);
+                                        error!("failed to send message to router: {}", e);
                                         break 'msg false;
                                     }
                                 }
                             }
                             Ok(None) => break 'msg true,
                             Err(e) => {
-                                error!("invalid payload. {:?}", e);
+                                error!("invalid payload. {}", e);
                                 break 'msg false;
                             }
                         }
