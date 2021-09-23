@@ -94,11 +94,13 @@ use std::fmt::{Display, Formatter, Result as DisplayResult};
 use std::marker::PhantomData;
 
 use bytes::Bytes;
+use log::error;
 use tokio::sync::mpsc;
 
 use crate::bridge::BridgeMessageOut;
 use crate::errors::{Error, Result};
-use crate::router::{RouterMessage, RouterTx, ToAddress, AddressToBytes};
+use crate::frame::Frame;
+use crate::router::{AddressToBytes, RouterMessage, RouterTx, ToAddress};
 
 // -----------------------------------------------------------------------------
 //     - Any message -
@@ -119,7 +121,7 @@ impl AnyMessage {
 /// A message received by an [`Agent`]
 pub enum Message<T: 'static, A: ToAddress> {
     /// Bytes received from a socket
-    RemoteMessage(Bytes, A, String), // String is host, TODO: change MEEEEE
+    RemoteMessage { bytes: Bytes, sender: A, host: String }, // String is host, TODO: change MEEEEE
     /// Value containing an instance of T and the address of the sender.
     Value(T, A),
     /// A tracked agent was removed
@@ -131,8 +133,12 @@ pub enum Message<T: 'static, A: ToAddress> {
 impl<T: Clone + 'static, A: ToAddress> Clone for Message<T, A> {
     fn clone(&self) -> Self {
         match self {
-            Self::RemoteMessage(bytes, addr, host) => {
-                Self::RemoteMessage(bytes.clone(), addr.clone(), host.clone())
+            Self::RemoteMessage { bytes, sender, host } => {
+                Self::RemoteMessage {
+                    bytes: bytes.clone(),
+                    sender: sender.clone(),
+                    host: host.clone(),
+                }
             }
             Self::Value(val, addr) => Self::Value(val.clone(), addr.clone()),
             Self::AgentRemoved(addr) => Self::AgentRemoved(addr.clone()),
@@ -147,7 +153,7 @@ impl<T: Display + 'static, A: ToAddress> Display for Message<T, A> {
             Self::Value(val, sender) => {
                 write!(f, "{} > Value<{}>", sender.to_string(), val)
             }
-            Self::RemoteMessage(bytes, sender, host) => write!(
+            Self::RemoteMessage { bytes, sender, host } => write!(
                 f,
                 "{}@{} > Bytes({})",
                 sender.to_string(),
@@ -176,7 +182,7 @@ impl<A: ToAddress> AgentMsg<A> {
     fn to_local_message<U: 'static>(self) -> Result<Message<U, A>> {
         match self {
             Self::RemoteMessage(bytes, sender, host) => {
-                Ok(Message::RemoteMessage(bytes, sender, host))
+                Ok(Message::RemoteMessage { bytes, sender, host })
             }
             Self::AgentRemoved(address) => Ok(Message::AgentRemoved(address)),
             Self::Message(val, sender) => match val.0.downcast() {
@@ -268,7 +274,28 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
         Ok(())
     }
 
-    /// This is used for debugging, to print 
+    pub fn send_remote(
+        &self,
+        recipients: &[A],
+        message: &[u8],
+    ) -> Result<()> {
+        let framed_message = Frame::frame_message(&message);
+
+        recipients.into_iter().cloned().for_each(|recipient| {
+            let router_msg = RouterMessage::Message {
+                recipient,
+                sender: self.address.clone(),
+                msg: AnyMessage::new(framed_message.clone()),
+            };
+            if let Err(e) = self.router_tx.send(router_msg) {
+                error!("Failed to send a remote message. Reason: {}", e);
+            }
+        });
+
+        Ok(())
+    }
+
+    /// This is used for debugging, to print
     /// the current list of registered channels on a router.
     pub fn print_channels(&self) {
         let _ = self.router_tx.send(RouterMessage::PrintChannels);
@@ -283,7 +310,6 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
         let _ = self.router_tx.send(RouterMessage::ShutdownRouter);
     }
 }
-
 
 impl<T: Send + 'static, A: ToAddress + AddressToBytes> Agent<T, A> {
     pub fn send_bridged(

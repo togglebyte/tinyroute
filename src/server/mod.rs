@@ -145,19 +145,25 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
     ///
     /// This is useful when letting the router handle the connections,
     /// and all messages are passed as [`Message::RemoteMessage`].
-    pub async fn run<F: FnMut() -> A>(mut self, router_tx: RouterTx<A>, mut f: F) -> Result<()> {
+    pub async fn run<F: FnMut() -> A>(mut self, router_tx: RouterTx<A>, timeout: Option<Duration>, mut f: F) -> Result<()> {
         while let Some(mut connection) = self.next(
             router_tx.clone(),
             (f)(),
-            None,
+            timeout,
             1024,
         ).await {
             tokio::spawn(async move {
                 loop {
-                    if let Err(e) = connection.recv().await {
-                        error!("Connection error: {}", e);
+                    match connection.recv().await {
+                        Ok(Some(Message::Shutdown)) => break,
+                        Err(e) => {
+                            error!("Connection error: {}", e);
+                            break
+                        }
+                        _ => (),
                     }
                 }
+                error!("Done");
             });
         }
         Ok(())
@@ -244,7 +250,7 @@ async fn spawn_reader<A, R>(
         let restart = match timeout {
             Some(timeout) => {
                 tokio::select! {
-                    _ = time::sleep(timeout) => true,
+                    _ = time::sleep(timeout) => false,
                     restart = read => { restart }
                 }
             }
@@ -280,10 +286,14 @@ where
         Self { agent, writer }
     }
 
-    pub async fn recv(&mut self) -> Result<()> {
-        if let Message::Value(framed_message, _) = self.agent.recv().await? {
-            self.writer.write_all(&framed_message.0).await?;
+    pub async fn recv(&mut self) -> Result<Option<Message<FramedMessage, A>>> {
+        let msg = self.agent.recv().await?;
+        match msg {
+            Message::Value(framed_message, _) => {
+                self.writer.write_all(&framed_message.0).await?;
+                Ok(None)
+            }
+            _ => Ok(Some(msg)),
         }
-        Ok(())
     }
 }
