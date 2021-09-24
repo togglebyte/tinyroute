@@ -21,11 +21,11 @@ pub enum Error {
     #[error("Failed to register agent")]
     RegisterAgentFailed,
 
-    #[error("Failed to deliver router message")]
-    RouterMessage,
+    #[error("Failed to deliver the message to the router")]
+    RouterUnrecoverableError,
 
-    #[error("Failed to send message")]
-    MessageSendFail,
+    #[error("Failed to send message to another channel")]
+    GenericChannelSendError,
 
     #[error("Remote message to local channel")]
     RemoteToLocal,
@@ -45,6 +45,6 @@ pub enum Error {
 
 impl<A: ToAddress> From<mpsc::error::SendError<AgentMsg<A>>> for Error {
     fn from(_: mpsc::error::SendError<AgentMsg<A>>) -> Self {
-        Self::MessageSendFail
+        Self::GenericChannelSendError
     }
 }

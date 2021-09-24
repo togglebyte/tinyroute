@@ -32,7 +32,7 @@ impl<A: ToAddress> RouterTx<A> {
     pub(crate) fn send(&self, msg: RouterMessage<A>) -> Result<()> {
         match self.0.send(msg) {
             Ok(()) => Ok(()),
-            Err(_e) => Err(Error::RouterMessage),
+            Err(_) => Err(Error::RouterUnrecoverableError),
         }
     }
 }
@@ -206,8 +206,7 @@ impl<A: ToAddress + Clone> Router<A> {
                     let _ = success_tx.send(());
                 }
                 RouterMessage::Track { from, to } => {
-                    let tracked =
-                        self.subscriptions.entry(to).or_insert(Vec::new());
+                    let tracked = self.subscriptions.entry(to).or_insert(Vec::new());
 
                     if tracked.contains(&from) {
                         continue;

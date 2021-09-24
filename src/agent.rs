@@ -82,7 +82,7 @@
 //! while let Ok(msg) = agent.recv().await {
 //!     match msg {
 //!         Message::Value(value, sender) => println!("message received: {} from {}", value, sender.to_string()),
-//!         Message::RemoteMessage(bytes, sender, host) => println!("{}@{} sent {} bytes", sender.to_string(), host, bytes.len()),
+//!         Message::RemoteMessage { bytes, sender, host } => println!("{}@{} sent {} bytes", sender.to_string(), host, bytes.len()),
 //!         Message::Shutdown => break,
 //!         Message::AgentRemoved(address) => println!("Agent {} was removed, and we care", address.to_string()),
 //!     }
@@ -90,11 +90,10 @@
 //! # }
 //! ```
 use std::any::Any;
-use std::fmt::{Display, Formatter, Result as DisplayResult};
+use std::fmt::{Debug, Display, Formatter, Result as DisplayResult};
 use std::marker::PhantomData;
 
 use bytes::Bytes;
-use log::error;
 use tokio::sync::mpsc;
 
 use crate::bridge::BridgeMessageOut;
@@ -168,6 +167,27 @@ impl<T: Display + 'static, A: ToAddress> Display for Message<T, A> {
     }
 }
 
+impl<T: Debug + 'static, A: ToAddress> Debug for Message<T, A> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> DisplayResult {
+        match self {
+            Self::Value(val, sender) => {
+                write!(f, "{} > Value<{:?}>", sender.to_string(), val)
+            }
+            Self::RemoteMessage { bytes, sender, host } => write!(
+                f,
+                "{}@{} > Bytes({})",
+                sender.to_string(),
+                host,
+                bytes.len()
+            ),
+            Self::AgentRemoved(addr) => {
+                write!(f, "AgentRemoved<{}>", addr.to_string())
+            }
+            Self::Shutdown => write!(f, "Shutdown"),
+        }
+    }
+}
+
 // -----------------------------------------------------------------------------
 //     - Agent message -
 // -----------------------------------------------------------------------------
@@ -200,7 +220,6 @@ impl<A: ToAddress> AgentMsg<A> {
 /// An agent receives messages from the [`crate::router::Router`].
 pub struct Agent<T, A: ToAddress> {
     pub(crate) router_tx: RouterTx<A>,
-    // pub(crate) transport: S, //  mpsc::Receiver<AgentMsg<AnyMessage, A>>,
     pub(crate) address: A,
     rx: mpsc::Receiver<AgentMsg<A>>,
     _p: PhantomData<T>,
@@ -274,25 +293,24 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
         Ok(())
     }
 
-    pub fn send_remote(
-        &self,
-        recipients: &[A],
-        message: &[u8],
-    ) -> Result<()> {
+    pub fn send_remote(&self, recipients: &[A], message: &[u8]) -> Result<()> {
         let framed_message = Frame::frame_message(&message);
 
-        recipients.into_iter().cloned().for_each(|recipient| {
+        for recipient in recipients.into_iter().cloned() {
             let router_msg = RouterMessage::Message {
                 recipient,
                 sender: self.address.clone(),
                 msg: AnyMessage::new(framed_message.clone()),
             };
-            if let Err(e) = self.router_tx.send(router_msg) {
-                error!("Failed to send a remote message. Reason: {}", e);
-            }
-        });
+            self.router_tx.send(router_msg)?;
+        }
 
         Ok(())
+    }
+
+    /// Tell the router to shut down an agent
+    pub fn send_shutdown(&self, recipient: A) -> Result<()> {
+        self.router_tx.send(RouterMessage::Shutdown(recipient))
     }
 
     /// This is used for debugging, to print

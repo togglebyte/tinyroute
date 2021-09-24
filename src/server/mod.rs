@@ -163,7 +163,6 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
                         _ => (),
                     }
                 }
-                error!("Done");
             });
         }
         Ok(())
