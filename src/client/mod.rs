@@ -41,11 +41,13 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc;
 
 mod tcp;
+mod uds;
 
 use crate::errors::Error;
 use crate::frame::{Frame, FrameOutput, FramedMessage};
 
 pub use tcp::TcpClient;
+pub use uds::UdsClient;
 
 /// Type alias for `tokio::mpsc::Receiver<Vec<u8>>`
 pub type ClientReceiver = mpsc::Receiver<Vec<u8>>;

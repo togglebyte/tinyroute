@@ -100,6 +100,7 @@ use crate::bridge::BridgeMessageOut;
 use crate::errors::{Error, Result};
 use crate::frame::Frame;
 use crate::router::{AddressToBytes, RouterMessage, RouterTx, ToAddress};
+use crate::server::ConnectionAddr;
 
 // -----------------------------------------------------------------------------
 //     - Any message -
@@ -120,7 +121,7 @@ impl AnyMessage {
 /// A message received by an [`Agent`]
 pub enum Message<T: 'static, A: ToAddress> {
     /// Bytes received from a socket
-    RemoteMessage { bytes: Bytes, sender: A, host: String }, // String is host, TODO: change MEEEEE
+    RemoteMessage { bytes: Bytes, sender: A, host: ConnectionAddr },
     /// Value containing an instance of T and the address of the sender.
     Value(T, A),
     /// A tracked agent was removed
@@ -193,7 +194,7 @@ impl<T: Debug + 'static, A: ToAddress> Debug for Message<T, A> {
 // -----------------------------------------------------------------------------
 pub(crate) enum AgentMsg<A: ToAddress> {
     Message(AnyMessage, A), // A is the address of the sender
-    RemoteMessage(Bytes, A, String), // String is the host here, let's not leave it like this. TODO
+    RemoteMessage(Bytes, A, ConnectionAddr), // String is the host here, let's not leave it like this. TODO
     AgentRemoved(A),
     Shutdown,
 }

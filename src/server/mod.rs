@@ -1,6 +1,13 @@
+//! Creating a server
+//!
+//! ```
+//! # async fn run() {
+//! # }
+//! ```
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
+use std::fmt::{Display, Formatter};
 
 use bytes::Bytes;
 use log::error;
@@ -63,7 +70,7 @@ pub trait Listener: Sync {
 
 /// Because writing this entire trait malarkey is messy!
 pub type ServerFuture<'a, T, U> =
-    Pin<Box<dyn Future<Output = Result<(T, U, String)>> + Send + 'a>>;
+    Pin<Box<dyn Future<Output = Result<(T, U, ConnectionAddr)>> + Send + 'a>>;
 
 /// Accept incoming connections and provide agents as an abstraction.
 ///
@@ -172,7 +179,7 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
 async fn spawn_reader<A, R>(
     mut reader: R,
     sender: A,
-    socket_addr: String,
+    socket_addr: ConnectionAddr,
     router_tx: RouterTx<A>,
     timeout: Option<Duration>,
 ) where
@@ -293,6 +300,25 @@ where
                 Ok(None)
             }
             _ => Ok(Some(msg)),
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+//     - Connection adddress -
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub enum ConnectionAddr {
+    Tcp(std::net::SocketAddr),
+    #[cfg(target_os = "linux")]
+    Uds,
+}
+
+impl Display for ConnectionAddr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Tcp(addr) => write!(f, "{}", addr),
+            Self::Uds => write!(f, "Uds"),
         }
     }
 }

@@ -4,7 +4,7 @@ use tokio::net::UnixListener as TokioListener;
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 
 use crate::errors::Result;
-use super::{ServerFuture, Listener};
+use super::{ServerFuture, Listener, ConnectionAddr};
 
 /// A unix domain socket server
 pub struct UdsListener {
@@ -36,14 +36,9 @@ impl Listener for UdsListener {
 
     fn accept(&mut self) -> ServerFuture<'_, Self::Reader, Self::Writer> {
         let future = async move {
-            let (socket, addr) = self.inner.accept().await?;
+            let (socket, _) = self.inner.accept().await?;
             let (reader, writer) = socket.into_split();
-            let addr = addr
-                .as_pathname()
-                .and_then(Path::to_str)
-                .unwrap_or_else(|| "[no address]")
-                .to_string();
-            Ok((reader, writer, addr))
+            Ok((reader, writer, ConnectionAddr::Uds))
         };
 
         Box::pin(future)

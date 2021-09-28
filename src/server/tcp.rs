@@ -2,7 +2,7 @@ use tokio::net::TcpListener as TokioListener;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 
 use crate::errors::Result;
-use super::{ServerFuture, Listener};
+use super::{ServerFuture, Listener, ConnectionAddr};
 
 /// A tcp listener
 pub struct TcpListener {
@@ -36,7 +36,7 @@ impl Listener for TcpListener {
         let future = async move {
             let (socket, addr) = self.inner.accept().await?;
             let (reader, writer) = socket.into_split();
-            Ok((reader, writer, addr.to_string()))
+            Ok((reader, writer, ConnectionAddr::Tcp(addr)))
         };
 
         Box::pin(future)

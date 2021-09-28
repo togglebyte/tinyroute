@@ -6,6 +6,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::agent::{Agent, AgentMsg, AnyMessage};
 use crate::errors::{Error, Result};
+use crate::server::ConnectionAddr;
 
 // -----------------------------------------------------------------------------
 //     - Router TX -
@@ -57,7 +58,7 @@ pub(crate) enum RouterMessage<A: ToAddress> {
     Message { recipient: A, sender: A, msg: AnyMessage },
     // The only thing that should be sending these remote messages
     // are the reader halves of a socket!
-    RemoteMessage { recipient: A, sender: A, bytes: Bytes, host: String },
+    RemoteMessage { recipient: A, sender: A, bytes: Bytes, host: ConnectionAddr },
     Register(A, mpsc::Sender<AgentMsg<A>>, oneshot::Sender<()>),
     Track { from: A, to: A },
     Unregister(A),
