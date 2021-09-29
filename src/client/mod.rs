@@ -65,6 +65,27 @@ pub enum ClientMessage {
     Heartbeat,
 }
 
+impl ClientMessage {
+    /// Create a `ClientMessage::Payload` from a channel and payload.
+    ///
+    /// ```
+    /// use tinyroute::client::ClientMessage;
+    ///
+    /// let channel = b"chan";
+    /// let payload = b"hello world";
+    ///
+    /// let client_message = ClientMessage::channel_payload(channel, payload);
+    /// ```
+    pub fn channel_payload(channel: &[u8], payload: &[u8]) -> Self {
+        let mut buf = Vec::with_capacity(channel.len() + 1 + payload.len());
+        buf.extend_from_slice(channel);
+        buf.push(b'|');
+        buf.extend_from_slice(payload);
+        let framed_message = Frame::frame_message(&buf);
+        ClientMessage::Payload(framed_message)
+    }
+}
+
 /// A client connection
 pub trait Client {
     /// The reading half of the connection
