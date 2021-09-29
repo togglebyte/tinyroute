@@ -12,20 +12,12 @@ use crate::server::ConnectionAddr;
 //     - Router TX -
 // -----------------------------------------------------------------------------
 #[derive(Clone)]
-pub struct RouterTx<A: ToAddress>(
-    pub(crate) mpsc::UnboundedSender<RouterMessage<A>>,
-);
+pub struct RouterTx<A: ToAddress>(pub(crate) mpsc::UnboundedSender<RouterMessage<A>>);
 
 impl<A: ToAddress> RouterTx<A> {
-    pub(crate) async fn register_agent(
-        &self,
-        address: A,
-        tx: mpsc::Sender<AgentMsg<A>>,
-    ) -> Result<()> {
+    pub(crate) async fn register_agent(&self, address: A, tx: mpsc::Sender<AgentMsg<A>>) -> Result<()> {
         let (success_tx, success_rx) = oneshot::channel();
-        self.0
-            .send(RouterMessage::Register(address, tx, success_tx))
-            .map_err(|_| Error::RegisterAgentFailed)?;
+        self.0.send(RouterMessage::Register(address, tx, success_tx)).map_err(|_| Error::RegisterAgentFailed)?;
         success_rx.await.map_err(|_| Error::RegisterAgentFailed)?;
         Ok(())
     }
@@ -83,18 +75,11 @@ impl<A: ToAddress + Clone> Router<A> {
         Self { tx, rx, channels: HashMap::new(), subscriptions: HashMap::new() }
     }
 
-    pub fn new_agent<T: Send + 'static>(
-        &mut self,
-        cap: usize,
-        address: A,
-    ) -> Result<Agent<T, A>> {
+    pub fn new_agent<T: Send + 'static>(&mut self, cap: usize, address: A) -> Result<Agent<T, A>> {
         let (tx, transport_rx) = mpsc::channel(cap);
         let agent = Agent::new(self.router_tx(), address.clone(), transport_rx);
         if self.channels.contains_key(&address) {
-            warn!(
-                "There is already an agent registered at \"{}\"",
-                address.to_string()
-            );
+            warn!("There is already an agent registered at \"{}\"", address.to_string());
             return Err(Error::AddressRegistered);
         }
         self.channels.insert(address, tx);
@@ -116,9 +101,10 @@ impl<A: ToAddress + Clone> Router<A> {
         };
 
         for s in subs {
-            self.subscriptions.get_mut(&s).map(|relations| {
+            if let Some(relations) = self.subscriptions.get_mut(&s) {
                 relations.retain(|p| p != &address);
-            });
+            }
+
             let address = address.clone();
             if let Some(tx) = self.channels.get(&s) {
                 let _ = tx.send(AgentMsg::AgentRemoved(address)).await;
@@ -130,16 +116,18 @@ impl<A: ToAddress + Clone> Router<A> {
         while let Some(msg) = self.rx.recv().await {
             match msg {
                 RouterMessage::ShutdownRouter => {
-                    let mut drain = self.channels.drain();
-                    while let Some((_, tx)) = drain.next() {
-                        tokio::spawn(async move { let _ = tx.send(AgentMsg::Shutdown).await; });
+                    let drain = self.channels.drain().map(|(_, tx)|tx);
+                    for tx in drain {
+                        tokio::spawn(async move {
+                            let _ = tx.send(AgentMsg::Shutdown).await;
+                        });
                     }
 
                     info!("Shutting down router");
                     break;
                 }
                 RouterMessage::PrintChannels => {
-                    for (k, _) in &self.channels {
+                    for k in self.channels.keys() {
                         println!("Chan: {}", k.to_string());
                     }
                 }
@@ -147,21 +135,13 @@ impl<A: ToAddress + Clone> Router<A> {
                     let tx = match self.channels.get(&recipient) {
                         Some(val) => val,
                         None => {
-                            info!(
-                                "No channel registered at \"{}\"",
-                                recipient.to_string()
-                            );
+                            info!("No channel registered at \"{}\"", recipient.to_string());
                             continue;
                         }
                     };
 
-                    if let Err(_) =
-                        tx.send(AgentMsg::Message(msg, sender)).await
-                    {
-                        error!(
-                            "Failed to send a message to \"{}\"",
-                            recipient.to_string()
-                        );
+                    if tx.send(AgentMsg::Message(msg, sender)).await.is_err() {
+                        error!("Failed to send a message to \"{}\"", recipient.to_string());
                         // The receiving half is closed on the agent so
                         // removeing the channel makes sense
                         self.channels.remove(&recipient);
@@ -171,23 +151,13 @@ impl<A: ToAddress + Clone> Router<A> {
                     let tx = match self.channels.get(&recipient) {
                         Some(tx) => tx,
                         None => {
-                            info!(
-                                "No channel registered at \"{}\"",
-                                recipient.to_string()
-                            );
+                            info!("No channel registered at \"{}\"", recipient.to_string());
                             continue;
                         }
                     };
 
-                    if tx
-                        .send(AgentMsg::RemoteMessage(bytes, sender, host))
-                        .await
-                        .is_err()
-                    {
-                        error!(
-                            "Failed to send a message to \"{}\"",
-                            recipient.to_string()
-                        );
+                    if tx.send(AgentMsg::RemoteMessage(bytes, sender, host)).await.is_err() {
+                        error!("Failed to send a message to \"{}\"", recipient.to_string());
                         // The receiving half is closed on the agent so
                         // removeing the channel makes sense
                         self.channels.remove(&recipient);
@@ -195,10 +165,7 @@ impl<A: ToAddress + Clone> Router<A> {
                 }
                 RouterMessage::Register(address, tx, success_tx) => {
                     if self.channels.contains_key(&address) {
-                        warn!(
-                            "There is already an agent registered at \"{}\"",
-                            address.to_string()
-                        );
+                        warn!("There is already an agent registered at \"{}\"", address.to_string());
                         continue;
                     }
                     let address_str = address.to_string();
@@ -207,7 +174,7 @@ impl<A: ToAddress + Clone> Router<A> {
                     let _ = success_tx.send(());
                 }
                 RouterMessage::Track { from, to } => {
-                    let tracked = self.subscriptions.entry(to).or_insert(Vec::new());
+                    let tracked = self.subscriptions.entry(to).or_insert_with(Vec::new);
 
                     if tracked.contains(&from) {
                         continue;
@@ -222,10 +189,7 @@ impl<A: ToAddress + Clone> Router<A> {
                     let tx = match self.channels.get(&sender) {
                         Some(val) => val,
                         None => {
-                            info!(
-                                "No channel registered at \"{}\"",
-                                sender.to_string()
-                            );
+                            info!("No channel registered at \"{}\"", sender.to_string());
                             continue;
                         }
                     };
@@ -236,5 +200,11 @@ impl<A: ToAddress + Clone> Router<A> {
         }
 
         info!("Router shutdown successful");
+    }
+}
+
+impl<A: ToAddress> Default for Router<A> {
+    fn default() -> Self {
+        Self::new()
     }
 }

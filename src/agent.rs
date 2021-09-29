@@ -200,7 +200,7 @@ pub(crate) enum AgentMsg<A: ToAddress> {
 }
 
 impl<A: ToAddress> AgentMsg<A> {
-    fn to_local_message<U: 'static>(self) -> Result<Message<U, A>> {
+    fn into_local_message<U: 'static>(self) -> Result<Message<U, A>> {
         match self {
             Self::RemoteMessage(bytes, sender, host) => {
                 Ok(Message::RemoteMessage { bytes, sender, host })
@@ -277,7 +277,7 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
 
     pub async fn recv(&mut self) -> Result<Message<T, A>> {
         let msg = self.rx.recv().await.ok_or(Error::ChannelClosed)?;
-        msg.to_local_message()
+        msg.into_local_message()
     }
 
     pub fn send<U: Send + 'static>(
@@ -295,9 +295,9 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
     }
 
     pub fn send_remote(&self, recipients: &[A], message: &[u8]) -> Result<()> {
-        let framed_message = Frame::frame_message(&message);
+        let framed_message = Frame::frame_message(message);
 
-        for recipient in recipients.into_iter().cloned() {
+        for recipient in recipients.iter().cloned() {
             let router_msg = RouterMessage::Message {
                 recipient,
                 sender: self.address.clone(),

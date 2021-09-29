@@ -189,7 +189,7 @@ impl<'addr, A: ToAddress> Bridge<'addr, A> {
     pub async fn exec(&mut self) -> Result<Option<Message<BridgeMessageOut, A>>> {
         // Rx here is the incoming data from the network connection.
         // This should never do anything but return `None` once the connection is closed.
-        if let None = self.connection {
+        if self.connection.is_none() {
             self.connection = Some(self.reconnect().await?);
         }
 
