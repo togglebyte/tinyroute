@@ -152,9 +152,9 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
     ///
     /// This is useful when letting the router handle the connections,
     /// and all messages are passed as [`Message::RemoteMessage`].
-    pub async fn run<F: FnMut() -> A>(mut self, router_tx: RouterTx<A>, timeout: Option<Duration>, mut f: F) -> Result<()> {
+    pub async fn run<F: FnMut() -> A>(mut self, timeout: Option<Duration>, mut f: F) -> Result<()> {
         while let Some(mut connection) = self.next(
-            router_tx.clone(),
+            self.server_agent.router_tx.clone(),
             (f)(),
             timeout,
             1024,
