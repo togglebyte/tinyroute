@@ -194,7 +194,7 @@ impl<T: Debug + 'static, A: ToAddress> Debug for Message<T, A> {
 // -----------------------------------------------------------------------------
 pub(crate) enum AgentMsg<A: ToAddress> {
     Message(AnyMessage, A), // A is the address of the sender
-    RemoteMessage(Bytes, A, ConnectionAddr), // String is the host here, let's not leave it like this. TODO
+    RemoteMessage(Bytes, A, ConnectionAddr),
     AgentRemoved(A),
     Shutdown,
 }
