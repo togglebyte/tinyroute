@@ -294,10 +294,10 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
         Ok(())
     }
 
-    pub fn send_remote(&self, recipients: &[A], message: &[u8]) -> Result<()> {
+    pub fn send_remote(&self, recipients: impl IntoIterator<Item=A>, message: &[u8]) -> Result<()> {
         let framed_message = Frame::frame_message(message);
 
-        for recipient in recipients.iter().cloned() {
+        for recipient in recipients.into_iter() {
             let router_msg = RouterMessage::Message {
                 recipient,
                 sender: self.address.clone(),

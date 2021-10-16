@@ -216,7 +216,7 @@ impl<'addr, A: ToAddress> Bridge<'addr, A> {
 
         if let Message::Value(BridgeMessageOut(framed_message), _) = message {
             // if you can read this, know that you are wonderful
-            match bridge_output_tx.send(ClientMessage::Payload(framed_message)).await {
+            match bridge_output_tx.send(ClientMessage::Payload(framed_message)) {
                 Err(_e) => Err(BridgeError::Connection.into()),
                 Ok(()) => Ok(None),
             }

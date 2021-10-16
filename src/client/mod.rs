@@ -50,9 +50,9 @@ pub use tcp::TcpClient;
 pub use uds::UdsClient;
 
 /// Type alias for `tokio::mpsc::Receiver<Vec<u8>>`
-pub type ClientReceiver = mpsc::Receiver<Vec<u8>>;
+pub type ClientReceiver = mpsc::UnboundedReceiver<Vec<u8>>;
 /// Type alias for `tokio::mpsc::Sender<ClientMessage>`
-pub type ClientSender = mpsc::Sender<ClientMessage>;
+pub type ClientSender = mpsc::UnboundedSender<ClientMessage>;
 
 /// Client message
 #[derive(Debug)]
@@ -102,8 +102,8 @@ pub fn connect(
     connection: impl Client,
     heartbeat: Option<Duration>,
 ) -> (ClientSender, ClientReceiver) {
-    let (writer_tx, writer_rx) = mpsc::channel(100);
-    let (reader_tx, reader_rx) = mpsc::channel(100);
+    let (writer_tx, writer_rx) = mpsc::unbounded_channel();
+    let (reader_tx, reader_rx) = mpsc::unbounded_channel();
 
     let (reader, writer) = connection.split();
 
@@ -117,7 +117,7 @@ pub fn connect(
     (writer_tx, reader_rx)
 }
 
-async fn run_heartbeat(freq: Duration, writer_tx: mpsc::Sender<ClientMessage>) {
+async fn run_heartbeat(freq: Duration, writer_tx: mpsc::UnboundedSender<ClientMessage>) {
     info!("Start beat");
     // Heart beat should never be less than a second
     assert!(
@@ -127,7 +127,7 @@ async fn run_heartbeat(freq: Duration, writer_tx: mpsc::Sender<ClientMessage>) {
 
     loop {
         tokio::time::sleep(freq - jitter()).await;
-        if let Err(e) = writer_tx.send(ClientMessage::Heartbeat).await {
+        if let Err(e) = writer_tx.send(ClientMessage::Heartbeat) {
             error!("Failed to send heartbeat to writer: {}", e);
             break;
         }
@@ -145,8 +145,8 @@ fn jitter() -> Duration {
 
 async fn use_reader(
     mut reader: impl AsyncRead + Unpin + Send + 'static,
-    output_tx: mpsc::Sender<Vec<u8>>,
-    writer_tx: mpsc::Sender<ClientMessage>,
+    output_tx: mpsc::UnboundedSender<Vec<u8>>,
+    writer_tx: mpsc::UnboundedSender<ClientMessage>,
 ) {
     let mut frame = Frame::empty();
 
@@ -159,7 +159,7 @@ async fn use_reader(
                 Ok(_) => match frame.try_msg() {
                     Ok(None) => break 'msg,
                     Ok(Some(FrameOutput::Heartbeat)) => error!("received a heartbeat on the reader"),
-                    Ok(Some(FrameOutput::Message(payload))) => drop(output_tx.send(payload).await),
+                    Ok(Some(FrameOutput::Message(payload))) => drop(output_tx.send(payload)),
                     Err(Error::MalformedHeader) => {}
                     Err(_) => unreachable!(),
                 },
@@ -171,13 +171,13 @@ async fn use_reader(
         }
     }
 
-    let _ = writer_tx.send(ClientMessage::Quit).await;
+    let _ = writer_tx.send(ClientMessage::Quit);
     info!("Client closed (reader)");
 }
 
 async fn use_writer(
     mut writer: impl AsyncWrite + Unpin + Send + 'static,
-    mut rx: mpsc::Receiver<ClientMessage>,
+    mut rx: mpsc::UnboundedReceiver<ClientMessage>,
 ) -> Option<()> {
     loop {
         let msg = rx.recv().await?;
