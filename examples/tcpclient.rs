@@ -4,7 +4,7 @@ use std::time::Duration;
 use std::thread;
 use std::env::args;
 
-use tinyroute::client::{connect, TcpClient, ClientMessage};
+use tinyroute::client::{connect, TcpClient, ClientMessage, ClientReceiver};
 use tinyroute::frame::{FramedMessage, Frame};
 
 fn input() -> mpsc::Receiver<FramedMessage> {
@@ -34,13 +34,13 @@ async fn run(rx: mpsc::Receiver<FramedMessage>, port: u16) {
     tokio::spawn(output(read_rx));
 
     while let Ok(bytes) = rx.recv() {
-        if let Err(_) = write_tx.send(ClientMessage::Payload(bytes)).await {
+        if let Err(_) = write_tx.send(ClientMessage::Payload(bytes)) {
             break
         }
     }
 }
 
-async fn output(mut read_rx: tokio::sync::mpsc::Receiver<Vec<u8>>) -> Option<()> {
+async fn output(mut read_rx: ClientReceiver) -> Option<()> {
     loop {
         let payload = read_rx.recv().await?;
         let data = String::from_utf8(payload).ok()?;

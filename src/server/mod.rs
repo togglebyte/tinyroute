@@ -12,11 +12,11 @@ use std::fmt::{Display, Formatter};
 use bytes::Bytes;
 use log::error;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
-use tokio::sync::mpsc;
+// use tokio::sync::mpsc;
 use tokio::time;
 
 use crate::agent::{Agent, Message};
-use crate::errors::Result;
+use crate::errors::{Error, Result};
 use crate::frame::{Frame, FrameOutput, FramedMessage};
 
 mod tcp;
@@ -89,7 +89,7 @@ pub type ServerFuture<'a, T, U> =
 /// let mut server = Server::new(tcp_listener, server_agent);
 /// let mut id = 0;
 ///
-/// while let Some(connection) = server.next(
+/// while let Ok(connection) = server.next(
 ///     router.router_tx(),
 ///     Address(id),
 ///     None,
@@ -116,18 +116,19 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
         connection_address: A,
         timeout: Option<Duration>,
         cap: usize,
-    ) -> Option<Connection<A, <L as Listener>::Writer>> {
+    ) -> Result<Connection<A, <L as Listener>::Writer>> {
+
         let (reader, writer, socket_addr) = tokio::select! {
-            _ = self.server_agent.recv() => return None,
-            con = self.server.accept() => con.ok()?,
+            _ = self.server_agent.recv() => return Err(Error::ChannelClosed),
+            con = self.server.accept() => con?,
         };
 
         // Register the agent
-        let (transport_tx, transport_rx) = mpsc::channel(cap);
+        let (transport_tx, transport_rx) = flume::bounded(cap);
+
         router_tx
             .register_agent(connection_address.clone(), transport_tx)
-            .await
-            .ok()?;
+            .await?;
 
         let agent = Agent::new(
             router_tx.clone(),
@@ -144,7 +145,7 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
             timeout,
         ));
 
-        Some(Connection::new(agent, writer))
+        Ok(Connection::new(agent, writer))
     }
 
     /// Consume the [`Server]` and listening for new connections.
@@ -153,7 +154,7 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
     /// This is useful when letting the router handle the connections,
     /// and all messages are passed as [`Message::RemoteMessage`].
     pub async fn run<F: FnMut() -> A>(mut self, timeout: Option<Duration>, mut f: F) -> Result<()> {
-        while let Some(mut connection) = self.next(
+        while let Ok(mut connection) = self.next(
             self.server_agent.router_tx.clone(),
             (f)(),
             timeout,

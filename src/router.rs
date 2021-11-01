@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use bytes::Bytes;
 use log::{error, info, warn};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot;
 
 use crate::agent::{Agent, AgentMsg, AnyMessage};
 use crate::errors::{Error, Result};
@@ -12,10 +12,10 @@ use crate::server::ConnectionAddr;
 //     - Router TX -
 // -----------------------------------------------------------------------------
 #[derive(Clone)]
-pub struct RouterTx<A: ToAddress>(pub(crate) mpsc::UnboundedSender<RouterMessage<A>>);
+pub struct RouterTx<A: ToAddress>(pub(crate) flume::Sender<RouterMessage<A>>);
 
 impl<A: ToAddress> RouterTx<A> {
-    pub(crate) async fn register_agent(&self, address: A, tx: mpsc::Sender<AgentMsg<A>>) -> Result<()> {
+    pub(crate) async fn register_agent(&self, address: A, tx: flume::Sender<AgentMsg<A>>) -> Result<()> {
         let (success_tx, success_rx) = oneshot::channel();
         self.0.send(RouterMessage::Register(address, tx, success_tx)).map_err(|_| Error::RegisterAgentFailed)?;
         success_rx.await.map_err(|_| Error::RegisterAgentFailed)?;
@@ -51,7 +51,7 @@ pub(crate) enum RouterMessage<A: ToAddress> {
     // The only thing that should be sending these remote messages
     // are the reader halves of a socket!
     RemoteMessage { recipient: A, sender: A, bytes: Bytes, host: ConnectionAddr },
-    Register(A, mpsc::Sender<AgentMsg<A>>, oneshot::Sender<()>),
+    Register(A, flume::Sender<AgentMsg<A>>, oneshot::Sender<()>),
     Track { from: A, to: A },
     Unregister(A),
     Shutdown(A),
@@ -62,21 +62,54 @@ pub(crate) enum RouterMessage<A: ToAddress> {
 // -----------------------------------------------------------------------------
 //     - Router -
 // -----------------------------------------------------------------------------
+/// The `Router` is in charge of routing messages
+/// between agents.
+///
+/// ```
+/// # #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// # pub enum Address {
+/// #     A,
+/// #     B,
+/// # }
+/// # 
+/// # impl ToAddress for Address {
+/// #     fn from_bytes(bytes: &[u8]) -> Option<Address> {
+/// #         match bytes {
+/// #             _ => None
+/// #         }
+/// #     }
+/// # 
+/// #     fn to_string(&self) -> String {
+/// #         format!("{:?}", self)
+/// #     }
+/// # }
+/// use tinyroute::{ToAddress, Router, Message};
+/// # async fn run() {
+///
+/// let mut router = Router::<Address>::new();
+/// let mut agent_a = router.new_agent::<()>(1, Address::A).unwrap();
+/// let mut agent_b = router.new_agent::<()>(1, Address::B).unwrap();
+///
+/// agent_a.send(Address::B, ());
+///
+/// let val = agent_b.recv().await;
+/// # }
+/// ```
 pub struct Router<A: ToAddress> {
-    rx: mpsc::UnboundedReceiver<RouterMessage<A>>,
-    tx: mpsc::UnboundedSender<RouterMessage<A>>,
-    channels: HashMap<A, mpsc::Sender<AgentMsg<A>>>,
+    rx: flume::Receiver<RouterMessage<A>>,
+    tx: flume::Sender<RouterMessage<A>>,
+    channels: HashMap<A, flume::Sender<AgentMsg<A>>>,
     subscriptions: HashMap<A, Vec<A>>,
 }
 
 impl<A: ToAddress + Clone> Router<A> {
     pub fn new() -> Self {
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = flume::unbounded();
         Self { tx, rx, channels: HashMap::new(), subscriptions: HashMap::new() }
     }
 
     pub fn new_agent<T: Send + 'static>(&mut self, cap: usize, address: A) -> Result<Agent<T, A>> {
-        let (tx, transport_rx) = mpsc::channel(cap);
+        let (tx, transport_rx) = flume::bounded(cap);
         let agent = Agent::new(self.router_tx(), address.clone(), transport_rx);
         if self.channels.contains_key(&address) {
             warn!("There is already an agent registered at \"{}\"", address.to_string());
@@ -107,19 +140,19 @@ impl<A: ToAddress + Clone> Router<A> {
 
             let address = address.clone();
             if let Some(tx) = self.channels.get(&s) {
-                let _ = tx.send(AgentMsg::AgentRemoved(address)).await;
+                let _ = tx.send_async(AgentMsg::AgentRemoved(address)).await;
             }
         }
     }
 
     pub async fn run(mut self) {
-        while let Some(msg) = self.rx.recv().await {
+        while let Ok(msg) = self.rx.recv_async().await {
             match msg {
                 RouterMessage::ShutdownRouter => {
                     let drain = self.channels.drain().map(|(_, tx)|tx);
                     for tx in drain {
                         tokio::spawn(async move {
-                            let _ = tx.send(AgentMsg::Shutdown).await;
+                            let _ = tx.send_async(AgentMsg::Shutdown).await;
                         });
                     }
 
@@ -140,7 +173,7 @@ impl<A: ToAddress + Clone> Router<A> {
                         }
                     };
 
-                    if tx.send(AgentMsg::Message(msg, sender)).await.is_err() {
+                    if tx.send_async(AgentMsg::Message(msg, sender)).await.is_err() {
                         error!("Failed to send a message to \"{}\"", recipient.to_string());
                         // The receiving half is closed on the agent so
                         // removeing the channel makes sense
@@ -156,7 +189,7 @@ impl<A: ToAddress + Clone> Router<A> {
                         }
                     };
 
-                    if tx.send(AgentMsg::RemoteMessage(bytes, sender, host)).await.is_err() {
+                    if tx.send_async(AgentMsg::RemoteMessage(bytes, sender, host)).await.is_err() {
                         error!("Failed to send a message to \"{}\"", recipient.to_string());
                         // The receiving half is closed on the agent so
                         // removeing the channel makes sense
@@ -171,7 +204,7 @@ impl<A: ToAddress + Clone> Router<A> {
                     let address_str = address.to_string();
                     self.channels.insert(address, tx);
                     info!("Registered \"{}\"", address_str);
-                    let _ = success_tx.send(());
+                    success_tx.send(()).unwrap();
                 }
                 RouterMessage::Track { from, to } => {
                     let tracked = self.subscriptions.entry(to).or_insert_with(Vec::new);
@@ -193,7 +226,7 @@ impl<A: ToAddress + Clone> Router<A> {
                             continue;
                         }
                     };
-                    let _ = tx.send(AgentMsg::Shutdown).await;
+                    let _ = tx.send_async(AgentMsg::Shutdown).await;
                     self.unregister(sender).await;
                 }
             }
@@ -206,5 +239,47 @@ impl<A: ToAddress + Clone> Router<A> {
 impl<A: ToAddress> Default for Router<A> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub enum Address {
+        Agent
+    }
+    
+    impl ToAddress for Address {
+        fn from_bytes(bytes: &[u8]) -> Option<Address> {
+            match bytes {
+                _ => None
+            }
+        }
+    
+        fn to_string(&self) -> String {
+            format!("{:?}", self)
+        }
+    }
+
+    #[test]
+    fn agent_creation() {
+        let mut router = Router::new();
+        let agent = router.new_agent::<()>(1024, Address::Agent);
+        let actual = agent.is_ok();
+        let expected = true;
+        assert_eq!(expected, actual);
+    }
+    
+    #[test]
+    fn failed_agent_creation() {
+        // Fail to register an agent at an existing address
+        let mut router = Router::new();
+        let agent_ok = router.new_agent::<()>(1024, Address::Agent);
+        let agent_err = router.new_agent::<()>(1024, Address::Agent);
+        let actual = agent_err.is_err();
+        let expected = true;
+        assert_eq!(expected, actual);
     }
 }

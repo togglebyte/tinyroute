@@ -9,6 +9,12 @@ pub enum Error {
     #[error("Io error")]
     Io(#[from] std::io::Error),
 
+    #[error("Receive error")]
+    RecvErr(#[from] flume::RecvError),
+
+    #[error("Try receive error")]
+    TryRecvErr(#[from] flume::TryRecvError),
+
     #[error("Channel closed")]
     ChannelClosed,
 

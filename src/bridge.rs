@@ -199,8 +199,8 @@ impl<'addr, A: ToAddress> Bridge<'addr, A> {
         // If the message from the `agent` is invalid, continue and try the next one
         // If the message is okay then return that
         let message = tokio::select! {
-            is_closed = rx_client_closed.recv() => {
-                let is_closed = is_closed.is_none();
+            is_closed = rx_client_closed.recv_async() => {
+                let is_closed = is_closed.is_err();
                 match is_closed {
                     true => {
                         self.connection = Some(self.reconnect().await?);

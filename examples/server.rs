@@ -56,7 +56,7 @@ async fn main() {
     let router_tx = router.router_tx();
     tokio::spawn(async move { 
         let mut id = 0;
-        uds_server.run(router_tx, None, || {
+        uds_server.run(None, || {
             id += 1;
             Address::UdsCon(id)
         }).await.unwrap(); 
@@ -66,7 +66,7 @@ async fn main() {
     let router_tx = router.router_tx();
     tokio::spawn(async move {
         let mut id = 0;
-        tcp_server.run(router_tx, None, || {
+        tcp_server.run(None, || {
             id += 1;
             Address::TcpCon(id)
         }).await.unwrap(); 

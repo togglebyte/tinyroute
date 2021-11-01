@@ -33,7 +33,7 @@ async fn run(rx: mpsc::Receiver<FramedMessage>, addr: String) {
     tokio::spawn(output(read_rx));
 
     while let Ok(bytes) = rx.recv() {
-        if let Err(_) = write_tx.send(ClientMessage::Payload(bytes)).await {
+        if let Err(_) = write_tx.send(ClientMessage::Payload(bytes)) {
             break
         }
     }

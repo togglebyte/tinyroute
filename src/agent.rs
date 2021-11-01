@@ -94,7 +94,7 @@ use std::fmt::{Debug, Display, Formatter, Result as DisplayResult};
 use std::marker::PhantomData;
 
 use bytes::Bytes;
-use tokio::sync::mpsc;
+// use tokio::sync::mpsc;
 
 use crate::bridge::BridgeMessageOut;
 use crate::errors::{Error, Result};
@@ -222,7 +222,7 @@ impl<A: ToAddress> AgentMsg<A> {
 pub struct Agent<T, A: ToAddress> {
     pub(crate) router_tx: RouterTx<A>,
     pub(crate) address: A,
-    rx: mpsc::Receiver<AgentMsg<A>>,
+    rx: flume::Receiver<AgentMsg<A>>,
     _p: PhantomData<T>,
 }
 
@@ -238,7 +238,7 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
     pub(crate) fn new(
         router_tx: RouterTx<A>,
         address: A,
-        rx: mpsc::Receiver<AgentMsg<A>>,
+        rx: flume::Receiver<AgentMsg<A>>,
     ) -> Self {
         Self { router_tx, rx, address, _p: PhantomData }
     }
@@ -248,7 +248,7 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
         address: A,
         cap: usize,
     ) -> Result<Agent<U, A>> {
-        let (transport_tx, transport_rx) = mpsc::channel(cap);
+        let (transport_tx, transport_rx) = flume::bounded(cap);
         let agent =
             Agent::new(self.router_tx.clone(), address.clone(), transport_rx);
         self.router_tx.register_agent(address, transport_tx).await?;
@@ -276,7 +276,7 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
     }
 
     pub async fn recv(&mut self) -> Result<Message<T, A>> {
-        let msg = self.rx.recv().await.ok_or(Error::ChannelClosed)?;
+        let msg = self.rx.recv_async().await.map_err(|_| Error::ChannelClosed)?;
         msg.into_local_message()
     }
 

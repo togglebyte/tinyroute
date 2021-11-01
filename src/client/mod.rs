@@ -30,7 +30,7 @@
 //!     loop {
 //!         let msg = rx.recv().await.unwrap();
 //!         let framed_msg = Frame::frame_message(&msg);
-//!         send.send(ClientMessage::Payload(framed_msg)).await;
+//!         send.send(ClientMessage::Payload(framed_msg));
 //!     }
 //! }
 //! ```
@@ -43,16 +43,16 @@ use tokio::sync::mpsc;
 mod tcp;
 mod uds;
 
-use crate::errors::Error;
+use crate::errors::{Result, Error};
 use crate::frame::{Frame, FrameOutput, FramedMessage};
 
 pub use tcp::TcpClient;
 pub use uds::UdsClient;
 
 /// Type alias for `tokio::mpsc::Receiver<Vec<u8>>`
-pub type ClientReceiver = mpsc::UnboundedReceiver<Vec<u8>>;
+pub type ClientReceiver = flume::Receiver<Vec<u8>>;
 /// Type alias for `tokio::mpsc::Sender<ClientMessage>`
-pub type ClientSender = mpsc::UnboundedSender<ClientMessage>;
+pub type ClientSender = flume::Sender<ClientMessage>;
 
 /// Client message
 #[derive(Debug)]
@@ -102,8 +102,8 @@ pub fn connect(
     connection: impl Client,
     heartbeat: Option<Duration>,
 ) -> (ClientSender, ClientReceiver) {
-    let (writer_tx, writer_rx) = mpsc::unbounded_channel();
-    let (reader_tx, reader_rx) = mpsc::unbounded_channel();
+    let (writer_tx, writer_rx) = flume::unbounded();
+    let (reader_tx, reader_rx) = flume::unbounded();
 
     let (reader, writer) = connection.split();
 
@@ -117,7 +117,7 @@ pub fn connect(
     (writer_tx, reader_rx)
 }
 
-async fn run_heartbeat(freq: Duration, writer_tx: mpsc::UnboundedSender<ClientMessage>) {
+async fn run_heartbeat(freq: Duration, writer_tx: flume::Sender<ClientMessage>) {
     info!("Start beat");
     // Heart beat should never be less than a second
     assert!(
@@ -145,8 +145,8 @@ fn jitter() -> Duration {
 
 async fn use_reader(
     mut reader: impl AsyncRead + Unpin + Send + 'static,
-    output_tx: mpsc::UnboundedSender<Vec<u8>>,
-    writer_tx: mpsc::UnboundedSender<ClientMessage>,
+    output_tx: flume::Sender<Vec<u8>>,
+    writer_tx: flume::Sender<ClientMessage>,
 ) {
     let mut frame = Frame::empty();
 
@@ -177,10 +177,10 @@ async fn use_reader(
 
 async fn use_writer(
     mut writer: impl AsyncWrite + Unpin + Send + 'static,
-    mut rx: mpsc::UnboundedReceiver<ClientMessage>,
-) -> Option<()> {
+    mut rx: flume::Receiver<ClientMessage>,
+) -> Result<()> {
     loop {
-        let msg = rx.recv().await?;
+        let msg = rx.recv_async().await.map_err(|_| Error::ChannelClosed)?;
         match msg {
             ClientMessage::Quit => break,
             ClientMessage::Heartbeat => {
@@ -199,5 +199,6 @@ async fn use_writer(
         }
     }
     info!("Client closed (writer)");
-    None
+    
+    Ok(())
 }
