@@ -1,5 +1,4 @@
 use std::io::{stdin, Result};
-use std::sync::mpsc;
 use std::time::Duration;
 use std::thread;
 use std::env::args;
@@ -7,8 +6,8 @@ use std::env::args;
 use tinyroute::client::{connect, TcpClient, ClientMessage, ClientReceiver};
 use tinyroute::frame::{FramedMessage, Frame};
 
-fn input() -> mpsc::Receiver<FramedMessage> {
-    let (tx, rx) = mpsc::channel();
+fn input() -> flume::Receiver<FramedMessage> {
+    let (tx, rx) = flume::unbounded();
 
     thread::spawn(move || -> Result<()> {
         let mut buffer = String::new();
@@ -26,7 +25,7 @@ fn input() -> mpsc::Receiver<FramedMessage> {
     rx
 }
 
-async fn run(rx: mpsc::Receiver<FramedMessage>, port: u16) {
+async fn run(rx: flume::Receiver<FramedMessage>, port: u16) {
     let addr = format!("127.0.0.1:{}", port);
     let client = TcpClient::connect(addr).await.unwrap();
     let (write_tx, read_rx) = connect(client, Some(Duration::from_secs(30)));
@@ -40,9 +39,9 @@ async fn run(rx: mpsc::Receiver<FramedMessage>, port: u16) {
     }
 }
 
-async fn output(mut read_rx: ClientReceiver) -> Option<()> {
+async fn output(read_rx: ClientReceiver) -> Option<()> {
     loop {
-        let payload = read_rx.recv().await?;
+        let payload = read_rx.recv_async().await.ok()?;
         let data = String::from_utf8(payload).ok()?;
         println!("data: {}", data);
     }

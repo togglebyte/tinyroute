@@ -21,7 +21,7 @@
 //!
 //! async fn receiver(mut rec: ClientReceiver, mut tx: mpsc::Sender<Vec<u8>>) {
 //!     loop {
-//!         let msg = rec.recv().await.unwrap();
+//!         let msg = rec.recv_async().await.unwrap();
 //!         tx.send(msg);
 //!     }
 //! }
@@ -38,7 +38,6 @@ use log::{error, info};
 use rand::prelude::*;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
-use tokio::sync::mpsc;
 
 mod tcp;
 mod uds;
@@ -177,7 +176,7 @@ async fn use_reader(
 
 async fn use_writer(
     mut writer: impl AsyncWrite + Unpin + Send + 'static,
-    mut rx: flume::Receiver<ClientMessage>,
+    rx: flume::Receiver<ClientMessage>,
 ) -> Result<()> {
     loop {
         let msg = rx.recv_async().await.map_err(|_| Error::ChannelClosed)?;

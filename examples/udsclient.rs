@@ -1,5 +1,4 @@
 use std::io::{stdin, Result};
-use std::sync::mpsc;
 use std::time::Duration;
 use std::thread;
 use std::env::args;
@@ -7,8 +6,8 @@ use std::env::args;
 use tinyroute::client::{connect, UdsClient, ClientMessage};
 use tinyroute::frame::{FramedMessage, Frame};
 
-fn input() -> mpsc::Receiver<FramedMessage> {
-    let (tx, rx) = mpsc::channel();
+fn input() -> flume::Receiver<FramedMessage> {
+    let (tx, rx) = flume::unbounded();
 
     thread::spawn(move || -> Result<()> {
         let mut buffer = String::new();
@@ -26,22 +25,22 @@ fn input() -> mpsc::Receiver<FramedMessage> {
     rx
 }
 
-async fn run(rx: mpsc::Receiver<FramedMessage>, addr: String) {
+async fn run(rx: flume::Receiver<FramedMessage>, addr: String) {
     let client = UdsClient::connect(addr).await.unwrap();
     let (write_tx, read_rx) = connect(client, Some(Duration::from_secs(30)));
 
     tokio::spawn(output(read_rx));
 
     while let Ok(bytes) = rx.recv() {
-        if let Err(_) = write_tx.send(ClientMessage::Payload(bytes)) {
+        if let Err(_) = write_tx.send_async(ClientMessage::Payload(bytes)).await {
             break
         }
     }
 }
 
-async fn output(mut read_rx: tokio::sync::mpsc::Receiver<Vec<u8>>) -> Option<()> {
+async fn output(read_rx: flume::Receiver<Vec<u8>>) -> Option<()> {
     loop {
-        let payload = read_rx.recv().await?;
+        let payload = read_rx.recv_async().await.ok()?;
         let data = String::from_utf8(payload).ok()?;
         println!("data: {}", data);
     }

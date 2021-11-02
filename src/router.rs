@@ -22,8 +22,8 @@ impl<A: ToAddress> RouterTx<A> {
         Ok(())
     }
 
-    pub(crate) fn send(&self, msg: RouterMessage<A>) -> Result<()> {
-        match self.0.send(msg) {
+    pub(crate) async fn send(&self, msg: RouterMessage<A>) -> Result<()> {
+        match self.0.send_async(msg).await {
             Ok(()) => Ok(()),
             Err(_) => Err(Error::RouterUnrecoverableError),
         }
@@ -276,7 +276,7 @@ mod test {
     fn failed_agent_creation() {
         // Fail to register an agent at an existing address
         let mut router = Router::new();
-        let agent_ok = router.new_agent::<()>(1024, Address::Agent);
+        let _agent_ok = router.new_agent::<()>(1024, Address::Agent);
         let agent_err = router.new_agent::<()>(1024, Address::Agent);
         let actual = agent_err.is_err();
         let expected = true;

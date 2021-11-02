@@ -1,7 +1,5 @@
-use std::fs::remove_file;
 use tinyroute::client::{connect, ClientMessage, UdsClient};
-use tinyroute::errors::Error;
-use tinyroute::server::{Server, TcpListener, UdsListener};
+use tinyroute::server::{Server, UdsListener};
 use tinyroute::{Agent, Message, Router, ToAddress};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -46,9 +44,9 @@ async fn remote_message() {
     // and send a remote message
     tokio::spawn(async move {
         let uds_client = UdsClient::connect(path).await.unwrap();
-        let (tx, rx) = connect(uds_client, None);
+        let (tx, _rx) = connect(uds_client, None);
         let message = ClientMessage::channel_payload(b"con", b"hello world");
-        tx.send(message);
+        tx.send_async(message).await.unwrap();
     });
 
     let mut connection = server.next(router_tx, Address::Con, None, 10).await.unwrap();
@@ -60,7 +58,7 @@ async fn remote_message() {
     }
 
     // Shutdown and cleanup
-    agent_a.shutdown_router();
-    handle.await;
+    agent_a.shutdown_router().await;
+    handle.await.unwrap();
     let _ = std::fs::remove_file(path);
 }

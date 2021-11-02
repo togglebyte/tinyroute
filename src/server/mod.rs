@@ -228,7 +228,7 @@ async fn spawn_reader<A, R>(
                                         host: socket_addr.clone(),
                                         recipient: address,
                                     },
-                                ) {
+                                ).await {
                                     Ok(_) => continue,
                                     Err(e) => {
                                         error!("failed to send message to router: {}", e);
@@ -270,7 +270,7 @@ async fn spawn_reader<A, R>(
     }
 
     // Shutdown the agent
-    if let Err(e) = router_tx.send(RouterMessage::Shutdown(sender)) {
+    if let Err(e) = router_tx.send(RouterMessage::Shutdown(sender)).await {
         error!("failed to shutdown agent: {}", e);
     }
 }

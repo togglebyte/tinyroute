@@ -53,7 +53,6 @@ async fn main() {
     let tcp_server = Server::new(tcp_listener, tcp_agent);
 
     // Start the Uds server
-    let router_tx = router.router_tx();
     tokio::spawn(async move { 
         let mut id = 0;
         uds_server.run(None, || {
@@ -63,7 +62,6 @@ async fn main() {
     });
 
     // Start the Tcp server
-    let router_tx = router.router_tx();
     tokio::spawn(async move {
         let mut id = 0;
         tcp_server.run(None, || {

@@ -255,19 +255,19 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
         Ok(agent)
     }
 
-    pub fn track(&self, address: A) -> Result<()> {
+    pub async fn track(&self, address: A) -> Result<()> {
         self.router_tx.send(RouterMessage::Track {
             from: self.address.clone(),
             to: address,
-        })?;
+        }).await?;
         Ok(())
     }
 
-    pub fn reverse_track(&self, address: A) -> Result<()> {
+    pub async fn reverse_track(&self, address: A) -> Result<()> {
         self.router_tx.send(RouterMessage::Track {
             from: address,
             to: self.address.clone(),
-        })?;
+        }).await?;
         Ok(())
     }
 
@@ -280,7 +280,7 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
         msg.into_local_message()
     }
 
-    pub fn send<U: Send + 'static>(
+    pub async fn send<U: Send + 'static>(
         &self,
         recipient: A,
         message: U,
@@ -290,11 +290,11 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
             sender: self.address.clone(),
             msg: AnyMessage::new(message),
         };
-        self.router_tx.send(router_msg)?;
+        self.router_tx.send(router_msg).await?;
         Ok(())
     }
 
-    pub fn send_remote(&self, recipients: impl IntoIterator<Item=A>, message: &[u8]) -> Result<()> {
+    pub async fn send_remote(&self, recipients: impl IntoIterator<Item=A>, message: &[u8]) -> Result<()> {
         let framed_message = Frame::frame_message(message);
 
         for recipient in recipients.into_iter() {
@@ -303,15 +303,15 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
                 sender: self.address.clone(),
                 msg: AnyMessage::new(framed_message.clone()),
             };
-            self.router_tx.send(router_msg)?;
+            self.router_tx.send(router_msg).await?;
         }
 
         Ok(())
     }
 
     /// Tell the router to shut down an agent
-    pub fn send_shutdown(&self, recipient: A) -> Result<()> {
-        self.router_tx.send(RouterMessage::Shutdown(recipient))
+    pub async fn send_shutdown(&self, recipient: A) -> Result<()> {
+        self.router_tx.send(RouterMessage::Shutdown(recipient)).await
     }
 
     /// This is used for debugging, to print
@@ -325,13 +325,13 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
         let _ = self.router_tx.send(router_msg);
     }
 
-    pub fn shutdown_router(&self) {
-        let _ = self.router_tx.send(RouterMessage::ShutdownRouter);
+    pub async fn shutdown_router(&self) {
+        let _ = self.router_tx.send(RouterMessage::ShutdownRouter).await;
     }
 }
 
 impl<T: Send + 'static, A: ToAddress + AddressToBytes> Agent<T, A> {
-    pub fn send_bridged(
+    pub async fn send_bridged(
         &self,
         bridge_address: A,
         remote: Bytes,
@@ -343,7 +343,7 @@ impl<T: Send + 'static, A: ToAddress + AddressToBytes> Agent<T, A> {
             recipient: bridge_address,
             msg: AnyMessage::new(msg),
         };
-        self.router_tx.send(router_msg)?;
+        self.router_tx.send(router_msg).await?;
         Ok(())
     }
 }
