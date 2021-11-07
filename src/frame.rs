@@ -1,19 +1,11 @@
 //! Framing messages
 use std::convert::TryInto;
-use std::io::{self, Read as _};
 use std::mem::size_of;
 use std::ops::Range;
 
 use bytes::{Bytes, BufMut, BytesMut};
 
 use crate::runtime::{AsyncRead, AsyncReadExt};
-
-// #[cfg(feature="tokio_rt")]
-// use tokio::io::{AsyncRead, AsyncReadExt};
-
-// #[cfg(feature="async_std_rt")]
-// use async_std::io::{Read as AsyncRead, ReadExt};
-
 use crate::errors::{Error, Result};
 
 const BUF_SIZE: usize = 1024;

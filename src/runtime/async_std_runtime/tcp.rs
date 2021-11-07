@@ -1,23 +1,22 @@
-pub use tokio::time::sleep;
-pub use tokio::task::spawn;
-pub use tokio::io::{
-    AsyncRead,
-    AsyncWrite,
-    AsyncWriteExt,
-    AsyncReadExt
+pub use async_std::task::{spawn, sleep};
+pub use async_std::io::{
+    Read as AsyncRead, 
+    Write as AsyncWrite, 
+    WriteExt as AsyncWriteExt,
+    ReadExt as AsyncReadExt
 };
-
-use tokio::net::TcpListener as TokioListener;
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
-use tokio::net::{TcpStream, ToSocketAddrs};
+use async_std::net::{TcpStream, ToSocketAddrs, TcpListener as AsyncStdTcpListener};
 
 use crate::errors::Result;
 use crate::server::{ServerFuture, Listener, ConnectionAddr};
 use crate::client::Client;
 
+// -----------------------------------------------------------------------------
+//     - Tcp listener -
+// -----------------------------------------------------------------------------
 /// A tcp listener
 pub struct TcpListener {
-    inner: TokioListener,
+    inner: AsyncStdTcpListener,
 }
 
 impl TcpListener {
@@ -29,7 +28,7 @@ impl TcpListener {
     /// let listener = TcpListener::bind("127.0.0.1:5000").await.expect("fail");
     /// # }
     pub async fn bind(addr: &str) -> Result<Self> {
-        let inner = TokioListener::bind(addr).await?;
+        let inner = AsyncStdTcpListener::bind(addr).await?;
 
         let inst = Self {
             inner,
@@ -40,13 +39,13 @@ impl TcpListener {
 }
 
 impl Listener for TcpListener {
-    type Reader = OwnedReadHalf;
-    type Writer = OwnedWriteHalf;
+    type Reader = TcpStream;
+    type Writer = TcpStream;
 
     fn accept(&mut self) -> ServerFuture<'_, Self::Reader, Self::Writer> {
         let future = async move {
-            let (socket, addr) = self.inner.accept().await?;
-            let (reader, writer) = socket.into_split();
+            let (reader, addr) = self.inner.accept().await?;
+            let writer = reader.clone();
             Ok((reader, writer, ConnectionAddr::Tcp(addr)))
         };
 
@@ -54,6 +53,9 @@ impl Listener for TcpListener {
     }
 }
 
+// -----------------------------------------------------------------------------
+//     - Tcp client -
+// -----------------------------------------------------------------------------
 /// ```
 /// # use tinyroute::client::TcpClient;
 /// # async fn run() {
@@ -78,12 +80,12 @@ impl TcpClient {
 }
 
 impl Client for TcpClient {
-    type Reader = OwnedReadHalf;
-    type Writer = OwnedWriteHalf;
+    type Reader = TcpStream;
+    type Writer = TcpStream;
 
     fn split(self) -> (Self::Reader, Self::Writer) {
-        let (reader, writer) = self.inner.into_split();
-
+        let reader = self.inner;
+        let writer = reader.clone();
         (reader, writer)
     }
 }

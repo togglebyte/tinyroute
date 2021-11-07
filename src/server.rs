@@ -14,16 +14,13 @@ use futures::future::FutureExt;
 use log::error;
 
 use crate::runtime::{spawn, sleep, AsyncRead, AsyncWrite, AsyncWriteExt};
-pub use crate::runtime::TcpListener;
+pub use crate::runtime::{TcpListener, UdsListener};
 
 use crate::agent::{Agent, Message};
 use crate::errors::{Error, Result};
 use crate::frame::{Frame, FrameOutput, FramedMessage};
 
 use crate::router::{RouterMessage, RouterTx, ToAddress};
-
-// mod uds;
-// pub use uds::UdsListener;
 
 /// Client payload.
 /// Access the bytes through `self.data()`

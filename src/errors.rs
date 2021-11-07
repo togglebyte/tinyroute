@@ -44,8 +44,8 @@ pub enum Error {
     #[error("Address already registered")]
     AddressRegistered,
 
-//     #[error("Bridgemalarkey")]
-//     Bridge(#[from] crate::bridge::BridgeError),
+    #[error("Bridgemalarkey")]
+    Bridge(#[from] crate::bridge::BridgeError),
 }
 
 impl<A: ToAddress> From<flume::SendError<AgentMsg<A>>> for Error {

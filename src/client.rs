@@ -39,14 +39,10 @@ use rand::prelude::*;
 use std::time::Duration;
 
 use crate::runtime::{AsyncRead, AsyncWrite, AsyncWriteExt, sleep, spawn};
-pub use crate::runtime::TcpClient;
-
-// mod uds;
+pub use crate::runtime::{UdsClient, TcpClient};
 
 use crate::errors::{Result, Error};
 use crate::frame::{Frame, FrameOutput, FramedMessage};
-
-// pub use uds::UdsClient;
 
 /// Type alias for `tokio::mpsc::Receiver<Vec<u8>>`
 pub type ClientReceiver = flume::Receiver<Vec<u8>>;
