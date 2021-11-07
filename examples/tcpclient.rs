@@ -5,6 +5,7 @@ use std::env::args;
 
 use tinyroute::client::{connect, TcpClient, ClientMessage, ClientReceiver};
 use tinyroute::frame::{FramedMessage, Frame};
+use tinyroute::spawn;
 
 fn input() -> flume::Receiver<FramedMessage> {
     let (tx, rx) = flume::unbounded();
@@ -30,7 +31,7 @@ async fn run(rx: flume::Receiver<FramedMessage>, port: u16) {
     let client = TcpClient::connect(addr).await.unwrap();
     let (write_tx, read_rx) = connect(client, Some(Duration::from_secs(30)));
 
-    tokio::spawn(output(read_rx));
+    spawn(output(read_rx));
 
     while let Ok(bytes) = rx.recv() {
         if let Err(_) = write_tx.send(ClientMessage::Payload(bytes)) {

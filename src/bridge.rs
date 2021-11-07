@@ -150,7 +150,7 @@ async fn connect_to(
                     Retry::Count(ref mut n) => *n -= 1,
                     Retry::Forever => {}
                 }
-                tokio::time::sleep(sleep_time).await;
+                crate::sleep(sleep_time).await;
                 info!("retrying...");
             }
         }

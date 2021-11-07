@@ -1,7 +1,7 @@
 use std::fs::remove_file;
 
 use tinyroute::server::{Server, UdsListener, TcpListener};
-use tinyroute::{Agent, Message, Router, ToAddress};
+use tinyroute::{Agent, Message, Router, ToAddress, spawn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Address {
@@ -53,7 +53,7 @@ async fn main() {
     let tcp_server = Server::new(tcp_listener, tcp_agent);
 
     // Start the Uds server
-    tokio::spawn(async move { 
+    spawn(async move { 
         let mut id = 0;
         uds_server.run(None, || {
             id += 1;
@@ -62,7 +62,7 @@ async fn main() {
     });
 
     // Start the Tcp server
-    tokio::spawn(async move {
+    spawn(async move {
         let mut id = 0;
         tcp_server.run(None, || {
             id += 1;
@@ -70,7 +70,7 @@ async fn main() {
         }).await.unwrap(); 
     });
 
-    tokio::spawn(router.run());
+    spawn(router.run());
 
     // Block on the log
     log(log_agent).await;

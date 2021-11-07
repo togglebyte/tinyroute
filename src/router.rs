@@ -4,17 +4,10 @@ use bytes::Bytes;
 use log::{error, info, warn};
 use flume::bounded;
 
-#[cfg(feature="tokio_rt")]
-#[cfg(not(feature="async_std_rt"))]
-use tokio::spawn;
-
-#[cfg(feature="async_std_rt")]
-#[cfg(not(feature="tokio_rt"))]
-use async_std::task::spawn;
-
 use crate::agent::{Agent, AgentMsg, AnyMessage};
 use crate::errors::{Error, Result};
 use crate::server::ConnectionAddr;
+use crate::runtime::spawn;
 
 // -----------------------------------------------------------------------------
 //     - Router TX -
