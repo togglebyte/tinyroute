@@ -38,50 +38,13 @@ use log::{error, info};
 use rand::prelude::*;
 use std::time::Duration;
 
-#[cfg(feature="tokio_rt")]
-#[cfg(not(feature="async_std_rt"))]
-use tokio::io::{AsyncRead as Read, AsyncWrite as Write, AsyncWriteExt as _};
-
-#[cfg(feature="async_std_rt")]
-#[cfg(not(feature="tokio_rt"))]
-use async_std::io::{Read, Write, WriteExt as _};
-
-#[cfg(feature="tokio_rt")]
-#[cfg(not(feature="async_std_rt"))]
-mod tcp_tokio;
-
-#[cfg(feature="async_std_rt")]
-#[cfg(not(feature="tokio_rt"))]
-mod tcp_async_std;
-
-#[cfg(feature="tokio_rt")]
-#[cfg(not(feature="async_std_rt"))]
-use tokio::spawn;
-
-#[cfg(feature="async_std_rt")]
-#[cfg(not(feature="tokio_rt"))]
-use async_std::task::spawn;
-
-#[cfg(feature="tokio_rt")]
-#[cfg(not(feature="async_std_rt"))]
-use tokio::time::sleep;
-
-#[cfg(feature="async_std_rt")]
-#[cfg(not(feature="tokio_rt"))]
-use async_std::task::sleep;
+use crate::runtime::{AsyncRead, AsyncWrite, AsyncWriteExt, sleep, spawn};
+pub use crate::runtime::TcpClient;
 
 // mod uds;
 
 use crate::errors::{Result, Error};
 use crate::frame::{Frame, FrameOutput, FramedMessage};
-
-#[cfg(feature="tokio_rt")]
-#[cfg(not(feature="async_std_rt"))]
-pub use tcp_tokio::TcpClient;
-
-#[cfg(feature="async_std_rt")]
-#[cfg(not(feature="tokio_rt"))]
-pub use tcp_async_std::TcpClient;
 
 // pub use uds::UdsClient;
 
@@ -125,9 +88,9 @@ impl ClientMessage {
 /// A client connection
 pub trait Client {
     /// The reading half of the connection
-    type Reader: Read + Unpin + Send + 'static;
+    type Reader: AsyncRead + Unpin + Send + 'static;
     /// The writing half of the connection
-    type Writer: Write + Unpin + Send + 'static;
+    type Writer: AsyncWrite + Unpin + Send + 'static;
 
     /// Split the connection into a reader / writer pair
     fn split(self) -> (Self::Reader, Self::Writer);
@@ -180,7 +143,7 @@ fn jitter() -> Duration {
 }
 
 async fn use_reader(
-    mut reader: impl Read + Unpin + Send + 'static,
+    mut reader: impl AsyncRead + Unpin + Send + 'static,
     output_tx: flume::Sender<Vec<u8>>,
     writer_tx: flume::Sender<ClientMessage>,
 ) {
@@ -212,7 +175,7 @@ async fn use_reader(
 }
 
 async fn use_writer(
-    mut writer: impl Write + Unpin + Send + 'static,
+    mut writer: impl AsyncWrite + Unpin + Send + 'static,
     rx: flume::Receiver<ClientMessage>,
 ) -> Result<()> {
     loop {

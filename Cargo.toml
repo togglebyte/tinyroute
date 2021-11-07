@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = []
+default = ["async_std_rt"]
 # default = ["async_std_rt"]
 tokio_rt = ["tokio"]
 async_std_rt = ["async-std"]

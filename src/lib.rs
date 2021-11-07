@@ -1,5 +1,5 @@
-#[cfg(feature="default")]
-compile_error!("Choose a runtime");
+// #[cfg(feature="default")]
+// compile_error!("Choose a runtime");
 
 mod router;
 
