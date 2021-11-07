@@ -4,30 +4,26 @@
 //! # async fn run() {
 //! # }
 //! ```
+use std::fmt::{Display, Formatter};
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
-use std::fmt::{Display, Formatter};
 
 use bytes::Bytes;
+use futures::future::FutureExt;
 use log::error;
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
-// use tokio::sync::mpsc;
-use tokio::time;
+
+use crate::runtime::{spawn, sleep, AsyncRead, AsyncWrite, AsyncWriteExt};
+pub use crate::runtime::TcpListener;
 
 use crate::agent::{Agent, Message};
 use crate::errors::{Error, Result};
 use crate::frame::{Frame, FrameOutput, FramedMessage};
 
-mod tcp;
-
 use crate::router::{RouterMessage, RouterTx, ToAddress};
-pub use tcp::TcpListener;
 
-#[cfg(target_os = "linux")]
-mod uds;
-#[cfg(target_os = "linux")]
-pub use uds::UdsListener;
+// mod uds;
+// pub use uds::UdsListener;
 
 /// Client payload.
 /// Access the bytes through `self.data()`
@@ -69,8 +65,7 @@ pub trait Listener: Sync {
 }
 
 /// Because writing this entire trait malarkey is messy!
-pub type ServerFuture<'a, T, U> =
-    Pin<Box<dyn Future<Output = Result<(T, U, ConnectionAddr)>> + Send + 'a>>;
+pub type ServerFuture<'a, T, U> = Pin<Box<dyn Future<Output = Result<(T, U, ConnectionAddr)>> + Send + 'a>>;
 
 /// Accept incoming connections and provide agents as an abstraction.
 ///
@@ -106,7 +101,7 @@ pub struct Server<L: Listener, A: Sync + ToAddress> {
 
 impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
     pub fn new(server: L, server_agent: Agent<(), A>) -> Self {
-        Self { server, server_agent, }
+        Self { server, server_agent }
     }
 
     /// Produce a [`Connection`]
@@ -117,33 +112,20 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
         timeout: Option<Duration>,
         cap: usize,
     ) -> Result<Connection<A, <L as Listener>::Writer>> {
-
-        let (reader, writer, socket_addr) = tokio::select! {
-            _ = self.server_agent.recv() => return Err(Error::ChannelClosed),
-            con = self.server.accept() => con?,
+        let (reader, writer, socket_addr) = futures::select! {
+            _ = self.server_agent.recv().fuse() => return Err(Error::ChannelClosed),
+            con = self.server.accept().fuse() => con?,
         };
 
         // Register the agent
         let (transport_tx, transport_rx) = flume::bounded(cap);
 
-        router_tx
-            .register_agent(connection_address.clone(), transport_tx)
-            .await?;
+        router_tx.register_agent(connection_address.clone(), transport_tx).await?;
 
-        let agent = Agent::new(
-            router_tx.clone(),
-            connection_address.clone(),
-            transport_rx,
-        );
+        let agent = Agent::new(router_tx.clone(), connection_address.clone(), transport_rx);
 
         // Spawn the reader
-        tokio::spawn(spawn_reader(
-            reader,
-            connection_address,
-            socket_addr,
-            router_tx,
-            timeout,
-        ));
+        spawn(spawn_reader(reader, connection_address, socket_addr, router_tx, timeout));
 
         Ok(Connection::new(agent, writer))
     }
@@ -154,19 +136,14 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
     /// This is useful when letting the router handle the connections,
     /// and all messages are passed as [`Message::RemoteMessage`].
     pub async fn run<F: FnMut() -> A>(mut self, timeout: Option<Duration>, mut f: F) -> Result<()> {
-        while let Ok(mut connection) = self.next(
-            self.server_agent.router_tx.clone(),
-            (f)(),
-            timeout,
-            1024,
-        ).await {
-            tokio::spawn(async move {
+        while let Ok(mut connection) = self.next(self.server_agent.router_tx.clone(), (f)(), timeout, 1024).await {
+            spawn(async move {
                 loop {
                     match connection.recv().await {
                         Ok(Some(Message::Shutdown)) => break,
                         Err(e) => {
                             error!("Connection error: {}", e);
-                            break
+                            break;
                         }
                         _ => (),
                     }
@@ -199,11 +176,8 @@ async fn spawn_reader<A, R>(
                         match frame.try_msg() {
                             Ok(Some(FrameOutput::Heartbeat)) => continue,
                             Ok(Some(FrameOutput::Message(msg))) => {
-                                let address = msg
-                                    .iter()
-                                    .cloned()
-                                    .take_while(|b| (*b as char) != '|')
-                                    .collect::<Vec<u8>>();
+                                let address =
+                                    msg.iter().cloned().take_while(|b| (*b as char) != '|').collect::<Vec<u8>>();
 
                                 // return in the event of the index being
                                 // larger than the payload it self
@@ -218,17 +192,17 @@ async fn spawn_reader<A, R>(
                                 };
 
                                 let payload = Payload::new(index, msg);
-                                let bytes =
-                                    Bytes::from(payload.data().to_vec());
+                                let bytes = Bytes::from(payload.data().to_vec());
 
-                                match router_tx.send(
-                                    RouterMessage::RemoteMessage {
+                                match router_tx
+                                    .send(RouterMessage::RemoteMessage {
                                         bytes,
                                         sender: sender.clone(),
                                         host: socket_addr.clone(),
                                         recipient: address,
-                                    },
-                                ).await {
+                                    })
+                                    .await
+                                {
                                     Ok(_) => continue,
                                     Err(e) => {
                                         error!("failed to send message to router: {}", e);
@@ -244,10 +218,7 @@ async fn spawn_reader<A, R>(
                         }
                     }
                     Err(e) => {
-                        error!(
-                            "failed to read from the socket. reason: {:?}",
-                            e
-                        );
+                        error!("failed to read from the socket. reason: {:?}", e);
                         break 'msg false;
                     }
                 }
@@ -256,9 +227,9 @@ async fn spawn_reader<A, R>(
 
         let restart = match timeout {
             Some(timeout) => {
-                tokio::select! {
-                    _ = time::sleep(timeout) => false,
-                    restart = read => { restart }
+                futures::select! {
+                    _ = sleep(timeout).fuse() => false,
+                    restart = read.fuse() =>  restart ,
                 }
             }
             None => read.await,

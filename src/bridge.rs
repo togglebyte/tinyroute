@@ -2,6 +2,7 @@
 use std::time::Duration;
 
 use bytes::Bytes;
+use futures::future::FutureExt;
 use log::{error, info};
 
 use crate::agent::{Agent, Message};
@@ -198,8 +199,8 @@ impl<'addr, A: ToAddress> Bridge<'addr, A> {
         // If the `rx_client` is closed, then reconnect.
         // If the message from the `agent` is invalid, continue and try the next one
         // If the message is okay then return that
-        let message = tokio::select! {
-            is_closed = rx_client_closed.recv_async() => {
+        let message = futures::select! {
+            is_closed = rx_client_closed.recv_async().fuse() => {
                 let is_closed = is_closed.is_err();
                 match is_closed {
                     true => {
@@ -211,7 +212,7 @@ impl<'addr, A: ToAddress> Bridge<'addr, A> {
                                               // now.
                 }
             },
-            msg = self.agent.recv() => msg?,
+            msg = self.agent.recv().fuse() => msg?,
         };
 
         if let Message::Value(BridgeMessageOut(framed_message), _) = message {

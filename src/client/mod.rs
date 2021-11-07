@@ -37,16 +37,53 @@
 use log::{error, info};
 use rand::prelude::*;
 use std::time::Duration;
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 
-mod tcp;
-mod uds;
+#[cfg(feature="tokio_rt")]
+#[cfg(not(feature="async_std_rt"))]
+use tokio::io::{AsyncRead as Read, AsyncWrite as Write, AsyncWriteExt as _};
+
+#[cfg(feature="async_std_rt")]
+#[cfg(not(feature="tokio_rt"))]
+use async_std::io::{Read, Write, WriteExt as _};
+
+#[cfg(feature="tokio_rt")]
+#[cfg(not(feature="async_std_rt"))]
+mod tcp_tokio;
+
+#[cfg(feature="async_std_rt")]
+#[cfg(not(feature="tokio_rt"))]
+mod tcp_async_std;
+
+#[cfg(feature="tokio_rt")]
+#[cfg(not(feature="async_std_rt"))]
+use tokio::spawn;
+
+#[cfg(feature="async_std_rt")]
+#[cfg(not(feature="tokio_rt"))]
+use async_std::task::spawn;
+
+#[cfg(feature="tokio_rt")]
+#[cfg(not(feature="async_std_rt"))]
+use tokio::time::sleep;
+
+#[cfg(feature="async_std_rt")]
+#[cfg(not(feature="tokio_rt"))]
+use async_std::task::sleep;
+
+// mod uds;
 
 use crate::errors::{Result, Error};
 use crate::frame::{Frame, FrameOutput, FramedMessage};
 
-pub use tcp::TcpClient;
-pub use uds::UdsClient;
+#[cfg(feature="tokio_rt")]
+#[cfg(not(feature="async_std_rt"))]
+pub use tcp_tokio::TcpClient;
+
+#[cfg(feature="async_std_rt")]
+#[cfg(not(feature="tokio_rt"))]
+pub use tcp_async_std::TcpClient;
+
+// pub use uds::UdsClient;
 
 /// Type alias for `tokio::mpsc::Receiver<Vec<u8>>`
 pub type ClientReceiver = flume::Receiver<Vec<u8>>;
@@ -88,9 +125,9 @@ impl ClientMessage {
 /// A client connection
 pub trait Client {
     /// The reading half of the connection
-    type Reader: AsyncRead + Unpin + Send + 'static;
+    type Reader: Read + Unpin + Send + 'static;
     /// The writing half of the connection
-    type Writer: AsyncWrite + Unpin + Send + 'static;
+    type Writer: Write + Unpin + Send + 'static;
 
     /// Split the connection into a reader / writer pair
     fn split(self) -> (Self::Reader, Self::Writer);
@@ -106,11 +143,11 @@ pub fn connect(
 
     let (reader, writer) = connection.split();
 
-    tokio::spawn(use_reader(reader, reader_tx, writer_tx.clone()));
-    tokio::spawn(use_writer(writer, writer_rx));
+    spawn(use_reader(reader, reader_tx, writer_tx.clone()));
+    spawn(use_writer(writer, writer_rx));
 
     if let Some(freq) = heartbeat {
-        tokio::spawn(run_heartbeat(freq, writer_tx.clone()));
+        spawn(run_heartbeat(freq, writer_tx.clone()));
     }
 
     (writer_tx, reader_rx)
@@ -125,7 +162,7 @@ async fn run_heartbeat(freq: Duration, writer_tx: flume::Sender<ClientMessage>) 
     );
 
     loop {
-        tokio::time::sleep(freq - jitter()).await;
+        sleep(freq - jitter()).await;
         if let Err(e) = writer_tx.send(ClientMessage::Heartbeat) {
             error!("Failed to send heartbeat to writer: {}", e);
             break;
@@ -143,7 +180,7 @@ fn jitter() -> Duration {
 }
 
 async fn use_reader(
-    mut reader: impl AsyncRead + Unpin + Send + 'static,
+    mut reader: impl Read + Unpin + Send + 'static,
     output_tx: flume::Sender<Vec<u8>>,
     writer_tx: flume::Sender<ClientMessage>,
 ) {
@@ -175,7 +212,7 @@ async fn use_reader(
 }
 
 async fn use_writer(
-    mut writer: impl AsyncWrite + Unpin + Send + 'static,
+    mut writer: impl Write + Unpin + Send + 'static,
     rx: flume::Receiver<ClientMessage>,
 ) -> Result<()> {
     loop {
@@ -188,6 +225,7 @@ async fn use_writer(
                     error!("Failed to write heartbeat: {}", e);
                     break;
                 }
+
             }
             ClientMessage::Payload(payload) => {
                 if let Err(e) = writer.write_all(&payload.0).await {
@@ -197,7 +235,7 @@ async fn use_writer(
             }
         }
     }
+
     info!("Client closed (writer)");
-    
     Ok(())
 }

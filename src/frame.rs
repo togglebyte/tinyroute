@@ -1,11 +1,18 @@
 //! Framing messages
 use std::convert::TryInto;
-use std::io::{self, Read};
+use std::io::{self, Read as _};
 use std::mem::size_of;
 use std::ops::Range;
 
 use bytes::{Bytes, BufMut, BytesMut};
-use tokio::io::{AsyncRead, AsyncReadExt};
+
+use crate::runtime::{AsyncRead, AsyncReadExt};
+
+// #[cfg(feature="tokio_rt")]
+// use tokio::io::{AsyncRead, AsyncReadExt};
+
+// #[cfg(feature="async_std_rt")]
+// use async_std::io::{Read as AsyncRead, ReadExt};
 
 use crate::errors::{Error, Result};
 
@@ -128,18 +135,18 @@ impl Frame {
         Ok(bytes_read)
     }
 
-    /// Perform a `read` on a reader
-    pub fn read<T: Read>(&mut self, reader: &mut T) -> io::Result<usize> {
-        let slice = self.available_slice_mut();
-        let res = reader.read(slice);
-        if let Ok(n) = res {
-            self.bytes_read += n;
-            if self.bytes_read < BUF_SIZE && self.buffer.capacity() > BUF_SIZE {
-                self.buffer.resize(BUF_SIZE, 0);
-            }
-        }
-        res
-    }
+    // /// Perform a `read` on a reader
+    // pub fn read<T: AsyncRead>(&mut self, reader: &mut T) -> io::Result<usize> {
+    //     let slice = self.available_slice_mut();
+    //     let res = reader.read(slice);
+    //     if let Ok(n) = res {
+    //         self.bytes_read += n;
+    //         if self.bytes_read < BUF_SIZE && self.buffer.capacity() > BUF_SIZE {
+    //             self.buffer.resize(BUF_SIZE, 0);
+    //         }
+    //     }
+    //     res
+    // }
 
     /// Frame a message.
     /// This is particularly useful when using the [`crate::client::connect`]

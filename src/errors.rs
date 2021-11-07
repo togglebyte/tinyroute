@@ -1,4 +1,3 @@
-use tokio::sync::mpsc;
 use crate::agent::AgentMsg;
 use crate::ToAddress;
 
@@ -45,12 +44,12 @@ pub enum Error {
     #[error("Address already registered")]
     AddressRegistered,
 
-    #[error("Bridgemalarkey")]
-    Bridge(#[from] crate::bridge::BridgeError),
+//     #[error("Bridgemalarkey")]
+//     Bridge(#[from] crate::bridge::BridgeError),
 }
 
-impl<A: ToAddress> From<mpsc::error::SendError<AgentMsg<A>>> for Error {
-    fn from(_: mpsc::error::SendError<AgentMsg<A>>) -> Self {
+impl<A: ToAddress> From<flume::SendError<AgentMsg<A>>> for Error {
+    fn from(_: flume::SendError<AgentMsg<A>>) -> Self {
         Self::GenericChannelSendError
     }
 }

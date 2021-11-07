@@ -94,9 +94,8 @@ use std::fmt::{Debug, Display, Formatter, Result as DisplayResult};
 use std::marker::PhantomData;
 
 use bytes::Bytes;
-// use tokio::sync::mpsc;
 
-use crate::bridge::BridgeMessageOut;
+// use crate::bridge::BridgeMessageOut;
 use crate::errors::{Error, Result};
 use crate::frame::Frame;
 use crate::router::{AddressToBytes, RouterMessage, RouterTx, ToAddress};
@@ -230,7 +229,7 @@ impl<S, A: ToAddress> Drop for Agent<S, A> {
     fn drop(&mut self) {
         let _ = self
             .router_tx
-            .send(RouterMessage::Unregister(self.address.clone()));
+            .send_sync(RouterMessage::Unregister(self.address.clone()));
     }
 }
 
@@ -330,20 +329,20 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
     }
 }
 
-impl<T: Send + 'static, A: ToAddress + AddressToBytes> Agent<T, A> {
-    pub async fn send_bridged(
-        &self,
-        bridge_address: A,
-        remote: Bytes,
-        message: Bytes,
-    ) -> Result<()> {
-        let msg = BridgeMessageOut::new(self.address.clone(), remote, message);
-        let router_msg = RouterMessage::Message {
-            sender: self.address.clone(),
-            recipient: bridge_address,
-            msg: AnyMessage::new(msg),
-        };
-        self.router_tx.send(router_msg).await?;
-        Ok(())
-    }
-}
+// impl<T: Send + 'static, A: ToAddress + AddressToBytes> Agent<T, A> {
+//     pub async fn send_bridged(
+//         &self,
+//         bridge_address: A,
+//         remote: Bytes,
+//         message: Bytes,
+//     ) -> Result<()> {
+//         let msg = BridgeMessageOut::new(self.address.clone(), remote, message);
+//         let router_msg = RouterMessage::Message {
+//             sender: self.address.clone(),
+//             recipient: bridge_address,
+//             msg: AnyMessage::new(msg),
+//         };
+//         self.router_tx.send(router_msg).await?;
+//         Ok(())
+//     }
+// }

@@ -2,7 +2,15 @@ use std::collections::HashMap;
 
 use bytes::Bytes;
 use log::{error, info, warn};
-use tokio::sync::oneshot;
+use flume::bounded;
+
+#[cfg(feature="tokio_rt")]
+#[cfg(not(feature="async_std_rt"))]
+use tokio::spawn;
+
+#[cfg(feature="async_std_rt")]
+#[cfg(not(feature="tokio_rt"))]
+use async_std::task::spawn;
 
 use crate::agent::{Agent, AgentMsg, AnyMessage};
 use crate::errors::{Error, Result};
@@ -16,14 +24,21 @@ pub struct RouterTx<A: ToAddress>(pub(crate) flume::Sender<RouterMessage<A>>);
 
 impl<A: ToAddress> RouterTx<A> {
     pub(crate) async fn register_agent(&self, address: A, tx: flume::Sender<AgentMsg<A>>) -> Result<()> {
-        let (success_tx, success_rx) = oneshot::channel();
+        let (success_tx, success_rx) = bounded(0);
         self.0.send(RouterMessage::Register(address, tx, success_tx)).map_err(|_| Error::RegisterAgentFailed)?;
-        success_rx.await.map_err(|_| Error::RegisterAgentFailed)?;
+        success_rx.recv_async().await.map_err(|_| Error::RegisterAgentFailed)?;
         Ok(())
     }
 
     pub(crate) async fn send(&self, msg: RouterMessage<A>) -> Result<()> {
         match self.0.send_async(msg).await {
+            Ok(()) => Ok(()),
+            Err(_) => Err(Error::RouterUnrecoverableError),
+        }
+    }
+
+    pub(crate) fn send_sync(&self, msg: RouterMessage<A>) -> Result<()> {
+        match self.0.send(msg) {
             Ok(()) => Ok(()),
             Err(_) => Err(Error::RouterUnrecoverableError),
         }
@@ -51,7 +66,7 @@ pub(crate) enum RouterMessage<A: ToAddress> {
     // The only thing that should be sending these remote messages
     // are the reader halves of a socket!
     RemoteMessage { recipient: A, sender: A, bytes: Bytes, host: ConnectionAddr },
-    Register(A, flume::Sender<AgentMsg<A>>, oneshot::Sender<()>),
+    Register(A, flume::Sender<AgentMsg<A>>, flume::Sender<()>),
     Track { from: A, to: A },
     Unregister(A),
     Shutdown(A),
@@ -151,7 +166,7 @@ impl<A: ToAddress + Clone> Router<A> {
                 RouterMessage::ShutdownRouter => {
                     let drain = self.channels.drain().map(|(_, tx)|tx);
                     for tx in drain {
-                        tokio::spawn(async move {
+                        spawn(async move {
                             let _ = tx.send_async(AgentMsg::Shutdown).await;
                         });
                     }
@@ -215,9 +230,7 @@ impl<A: ToAddress + Clone> Router<A> {
 
                     tracked.push(from);
                 }
-                RouterMessage::Unregister(address) => {
-                    self.unregister(address).await;
-                }
+                RouterMessage::Unregister(address) => self.unregister(address).await,
                 RouterMessage::Shutdown(sender) => {
                     let tx = match self.channels.get(&sender) {
                         Some(val) => val,
