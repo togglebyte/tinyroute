@@ -122,7 +122,12 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
         let agent = Agent::new(router_tx.clone(), connection_address.clone(), transport_rx);
 
         // Spawn the reader
-        spawn(spawn_reader(reader, connection_address, socket_addr, router_tx, timeout));
+        let reader_handle = spawn(spawn_reader(reader, connection_address, socket_addr, router_tx, timeout));
+
+        #[cfg(features="smol_rt")]
+        reader_handle.detach();
+        #[cfg(not(features="smol_rt"))]
+        let _ = reader_handle;
 
         Ok(Connection::new(agent, writer))
     }
@@ -134,7 +139,7 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
     /// and all messages are passed as [`Message::RemoteMessage`].
     pub async fn run<F: FnMut() -> A>(mut self, timeout: Option<Duration>, mut f: F) -> Result<()> {
         while let Ok(mut connection) = self.next(self.server_agent.router_tx.clone(), (f)(), timeout, 1024).await {
-            spawn(async move {
+            let server_handle = spawn(async move {
                 loop {
                     match connection.recv().await {
                         Ok(Some(Message::Shutdown)) => break,
@@ -146,6 +151,11 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
                     }
                 }
             });
+
+            #[cfg(features="smol_rt")]
+            server_handle.detach();
+            #[cfg(not(features="smol_rt"))]
+            let _ = server_handle;
         }
         Ok(())
     }

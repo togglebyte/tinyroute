@@ -102,11 +102,26 @@ pub fn connect(
 
     let (reader, writer) = connection.split();
 
-    spawn(use_reader(reader, reader_tx, writer_tx.clone()));
-    spawn(use_writer(writer, writer_rx));
+    let read_handle = spawn(use_reader(reader, reader_tx, writer_tx.clone()));
+    let write_handle = spawn(use_writer(writer, writer_rx));
+
+    #[cfg(features="smol_rt")]
+    {
+        read_handle.detach();
+        write_handle.detach();
+    }
+    #[cfg(not(features="smol_rt"))]
+    {
+        let _ = read_handle;
+        let _ = write_handle;
+    }
 
     if let Some(freq) = heartbeat {
-        spawn(run_heartbeat(freq, writer_tx.clone()));
+        let beat_handle = spawn(run_heartbeat(freq, writer_tx.clone()));
+        #[cfg(features="smol_rt")]
+        beat_handle.detach();
+        #[cfg(not(features="smol_rt"))]
+        let _ = beat_handle;
     }
 
     (writer_tx, reader_rx)

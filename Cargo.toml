@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["smol_rt"]
+default = []
+# default = ["smol_rt"]
 # default = ["async_std_rt"]
 # default = ["tokio_rt"]
 tokio_rt = ["tokio"]

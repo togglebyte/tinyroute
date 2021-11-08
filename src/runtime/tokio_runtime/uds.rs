@@ -21,7 +21,7 @@ impl UdsListener {
     /// # fn run() {
     /// let listener = UdsListener::bind("/tmp/my-file.sock").expect("fail");
     /// # }
-    pub fn bind(addr: impl AsRef<Path>) -> Result<Self> {
+    pub async fn bind(addr: impl AsRef<Path>) -> Result<Self> {
         let inner = TokioListener::bind(addr.as_ref())?;
 
         let inst = Self {

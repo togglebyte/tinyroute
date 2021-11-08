@@ -47,7 +47,7 @@ async fn main() {
     let uds_agent = router.new_agent(1024, Address::Uds).unwrap();
     let tcp_agent = router.new_agent(1024, Address::Tcp).unwrap();
 
-    let uds_listener = UdsListener::bind(socket_path).unwrap();
+    let uds_listener = UdsListener::bind(socket_path).await.unwrap();
     let tcp_listener = TcpListener::bind("127.0.0.1:6789").await.unwrap();
     let uds_server = Server::new(uds_listener, uds_agent);
     let tcp_server = Server::new(tcp_listener, tcp_agent);

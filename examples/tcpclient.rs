@@ -31,7 +31,9 @@ async fn run(rx: flume::Receiver<FramedMessage>, port: u16) {
     let client = TcpClient::connect(addr).await.unwrap();
     let (write_tx, read_rx) = connect(client, Some(Duration::from_secs(30)));
 
-    spawn(output(read_rx));
+    let _handle = spawn(output(read_rx));
+    #[cfg(feature="smol_rt")]
+    _handle.detach();
 
     while let Ok(bytes) = rx.recv() {
         if let Err(_) = write_tx.send(ClientMessage::Payload(bytes)) {
@@ -52,7 +54,7 @@ async fn output(read_rx: ClientReceiver) -> Option<()> {
 async fn main() {
     pretty_env_logger::init();
 
-    let port = args().skip(1).next().map(|s| s.parse::<u16>().ok()).flatten().unwrap_or(5000);
+    let port = args().skip(1).next().map(|s| s.parse::<u16>().ok()).flatten().unwrap_or(6789);
     let rx = input();
     run(rx, port).await;
 }
