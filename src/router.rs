@@ -162,9 +162,9 @@ impl<A: ToAddress + Clone> Router<A> {
                         let handle = spawn(async move {
                             let _ = tx.send_async(AgentMsg::Shutdown).await;
                         });
-                        #[cfg(feature="smol_rt")]
+                        #[cfg(feature="smol-rt")]
                         handle.detach();
-                        #[cfg(not(feature="smol_rt"))]
+                        #[cfg(not(feature="smol-rt"))]
                         let _ = handle;
                     }
 

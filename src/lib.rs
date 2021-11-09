@@ -1,7 +1,7 @@
-#[cfg(all(not(feature = "tokio_rt"), not(feature = "async_std_rt"), not(feature = "smol_rt")))]
-compile_error!("Specify a runtime: either tokio_rt, async_std_rt or smol_rt");
+#[cfg(all(not(feature = "tokio-rt"), not(feature = "async-std-rt"), not(feature = "smol-rt")))]
+compile_error!("Specify a runtime: either tokio-rt, async-std-rt or smol-rt");
 
-#[cfg(any(feature = "tokio_rt", feature = "async_std_rt", feature = "smol_rt"))]
+#[cfg(any(feature = "tokio-rt", feature = "async-std-rt", feature = "smol-rt"))]
 macro_rules! tinyroute {
     () => {
         mod router;
@@ -32,5 +32,9 @@ macro_rules! tinyroute {
     };
 }
 
-#[cfg(any(feature = "tokio_rt", feature = "async_std_rt", feature = "smol_rt"))]
+#[cfg(any(feature = "tokio-rt", feature = "async-std-rt", feature = "smol-rt"))]
 tinyroute!();
+
+
+#[cfg(feature = "websockets")]
+pub mod websockets;
