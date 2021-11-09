@@ -16,8 +16,8 @@ impl UdsListener {
     ///
     /// ```
     /// # use tinyroute::server::UdsListener;
-    /// # fn run() {
-    /// let listener = UdsListener::bind("/tmp/my-file.sock").expect("fail");
+    /// # async fn run() {
+    /// let listener = UdsListener::bind("/tmp/my-file.sock").await.expect("failed to create socket");
     /// # }
     pub async fn bind(addr: impl AsRef<Path>) -> Result<Self> {
         let inner = SmolListener::bind(addr)?;

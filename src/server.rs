@@ -124,9 +124,9 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
         // Spawn the reader
         let reader_handle = spawn(spawn_reader(reader, connection_address, socket_addr, router_tx, timeout));
 
-        #[cfg(features="smol_rt")]
+        #[cfg(feature="smol_rt")]
         reader_handle.detach();
-        #[cfg(not(features="smol_rt"))]
+        #[cfg(not(feature="smol_rt"))]
         let _ = reader_handle;
 
         Ok(Connection::new(agent, writer))
@@ -152,9 +152,9 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
                 }
             });
 
-            #[cfg(features="smol_rt")]
+            #[cfg(feature="smol_rt")]
             server_handle.detach();
-            #[cfg(not(features="smol_rt"))]
+            #[cfg(not(feature="smol_rt"))]
             let _ = server_handle;
         }
         Ok(())

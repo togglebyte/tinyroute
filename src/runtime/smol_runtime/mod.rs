@@ -5,7 +5,7 @@ pub use smol::io::{
     AsyncWriteExt,
     AsyncReadExt
 };
-pub use smol::spawn;
+pub use smol::{spawn, block_on, Task as JoinHandle};
 
 mod tcp;
 mod uds;

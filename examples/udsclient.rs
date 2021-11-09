@@ -30,13 +30,15 @@ async fn run(rx: flume::Receiver<FramedMessage>, addr: String) {
     let client = UdsClient::connect(addr).await.unwrap();
     let (write_tx, read_rx) = connect(client, Some(Duration::from_secs(30)));
 
-    spawn(output(read_rx));
+    let read_handle = spawn(output(read_rx));
 
     while let Ok(bytes) = rx.recv() {
         if let Err(_) = write_tx.send_async(ClientMessage::Payload(bytes)).await {
             break
         }
     }
+
+    read_handle.await;
 }
 
 async fn output(read_rx: flume::Receiver<Vec<u8>>) -> Option<()> {

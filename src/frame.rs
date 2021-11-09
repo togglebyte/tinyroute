@@ -80,7 +80,7 @@ impl Header {
 ///
 ///
 /// ```
-/// # use tokio::io::AsyncRead;
+/// # use tinyroute::io::AsyncRead;
 /// use tinyroute::frame::Frame;
 /// # async fn run(mut reader: impl AsyncRead + Unpin) {
 ///

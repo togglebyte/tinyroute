@@ -50,11 +50,14 @@ async fn output(read_rx: ClientReceiver) -> Option<()> {
     }
 }
 
-#[tokio::main]
-async fn main() {
+async fn async_main() {
     pretty_env_logger::init();
 
     let port = args().skip(1).next().map(|s| s.parse::<u16>().ok()).flatten().unwrap_or(6789);
     let rx = input();
     run(rx, port).await;
+}
+
+fn main() {
+    tinyroute::block_on(async_main());
 }

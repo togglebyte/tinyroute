@@ -36,7 +36,7 @@ async fn remote_message() {
     // Create a server using a unix socket
     let path = "/tmp/tinyroute-server-test.sock";
     let _ = std::fs::remove_file(path);
-    let listener = UdsListener::bind(path).unwrap();
+    let listener = UdsListener::bind(path).await.unwrap();
 
     let mut server = Server::new(listener, server_agent);
 

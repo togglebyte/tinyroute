@@ -105,12 +105,12 @@ pub fn connect(
     let read_handle = spawn(use_reader(reader, reader_tx, writer_tx.clone()));
     let write_handle = spawn(use_writer(writer, writer_rx));
 
-    #[cfg(features="smol_rt")]
+    #[cfg(feature="smol_rt")]
     {
         read_handle.detach();
         write_handle.detach();
     }
-    #[cfg(not(features="smol_rt"))]
+    #[cfg(not(feature="smol_rt"))]
     {
         let _ = read_handle;
         let _ = write_handle;
@@ -118,9 +118,9 @@ pub fn connect(
 
     if let Some(freq) = heartbeat {
         let beat_handle = spawn(run_heartbeat(freq, writer_tx.clone()));
-        #[cfg(features="smol_rt")]
+        #[cfg(feature="smol_rt")]
         beat_handle.detach();
-        #[cfg(not(features="smol_rt"))]
+        #[cfg(not(feature="smol_rt"))]
         let _ = beat_handle;
     }
 
