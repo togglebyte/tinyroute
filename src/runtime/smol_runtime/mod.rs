@@ -10,8 +10,8 @@ pub use smol::{spawn, block_on, Task as JoinHandle};
 mod tcp;
 mod uds;
 
-pub use tcp::{TcpListener, TcpClient};
-pub use uds::{UdsListener, UdsClient};
+pub use tcp::{TcpListener, TcpClient, TcpConnections};
+pub use uds::{UdsListener, UdsClient, UdsConnections};
 
 pub async fn sleep(time: std::time::Duration) {
     Timer::after(time).await;

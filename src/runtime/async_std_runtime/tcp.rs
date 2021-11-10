@@ -5,30 +5,31 @@ pub use async_std::io::{
     WriteExt as AsyncWriteExt,
     ReadExt as AsyncReadExt
 };
-use async_std::net::{TcpStream, ToSocketAddrs, TcpListener as AsyncStdTcpListener};
+use async_std::net::{TcpStream, ToSocketAddrs};
+pub use async_std::net::TcpListener;
 
 use crate::errors::Result;
-use crate::server::{ServerFuture, Listener, ConnectionAddr};
+use crate::server::{ServerFuture, Connections, ConnectionAddr};
 use crate::client::Client;
 
 // -----------------------------------------------------------------------------
 //     - Tcp listener -
 // -----------------------------------------------------------------------------
 /// A tcp listener
-pub struct TcpListener {
-    inner: AsyncStdTcpListener,
+pub struct TcpConnections {
+    inner: TcpListener
 }
 
-impl TcpListener {
+impl TcpConnections {
     /// Create a new tcp server given an address
     ///
     /// ```
-    /// # use tinyroute::server::TcpListener;
+    /// # use tinyroute::server::TcpConnections;
     /// # async fn run() {
-    /// let listener = TcpListener::bind("127.0.0.1:5000").await.expect("fail");
+    /// let listener = TcpConnections::bind("127.0.0.1:5000").await.expect("fail");
     /// # }
     pub async fn bind(addr: &str) -> Result<Self> {
-        let inner = AsyncStdTcpListener::bind(addr).await?;
+        let inner = TcpListener::bind(addr).await?;
 
         let inst = Self {
             inner,
@@ -38,7 +39,7 @@ impl TcpListener {
     }
 }
 
-impl Listener for TcpListener {
+impl Connections for TcpConnections {
     type Reader = TcpStream;
     type Writer = TcpStream;
 

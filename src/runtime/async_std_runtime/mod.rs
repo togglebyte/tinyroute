@@ -9,5 +9,5 @@ pub use async_std::io::{
 mod tcp;
 mod uds;
 
-pub use tcp::{TcpListener, TcpClient};
-pub use uds::{UdsListener, UdsClient};
+pub use tcp::{TcpListener, TcpClient, TcpConnections};
+pub use uds::{UdsListener, UdsClient, UdsConnections};

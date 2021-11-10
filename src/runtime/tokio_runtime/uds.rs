@@ -1,28 +1,28 @@
 use std::path::Path;
 
-use tokio::net::UnixListener as TokioListener;
+pub use tokio::net::UnixListener as UdsListener;
 use tokio::net::UnixStream;
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 
 use crate::errors::Result;
-use crate::server::{ServerFuture, Listener, ConnectionAddr};
+use crate::server::{ServerFuture, Connections, ConnectionAddr};
 use crate::client::Client;
 
 /// A unix domain socket server
-pub struct UdsListener {
-    inner: TokioListener,
+pub struct UdsConnections {
+    inner: UdsListener,
 }
 
-impl UdsListener {
+impl UdsConnections {
     /// Create a new uds server given a path.
     ///
     /// ```
-    /// # use tinyroute::server::UdsListener;
+    /// # use tinyroute::server::UdsConnections;
     /// # async fn run() {
-    /// let listener = UdsListener::bind("/tmp/my-file.sock").await.expect("failed to create socket");
+    /// let listener = UdsConnections::bind("/tmp/my-file.sock").await.expect("failed to create socket");
     /// # }
     pub async fn bind(addr: impl AsRef<Path>) -> Result<Self> {
-        let inner = TokioListener::bind(addr.as_ref())?;
+        let inner = UdsListener::bind(addr.as_ref())?;
 
         let inst = Self {
             inner,
@@ -32,7 +32,7 @@ impl UdsListener {
     }
 }
 
-impl Listener for UdsListener {
+impl Connections for UdsConnections {
     type Reader = OwnedReadHalf;
     type Writer = OwnedWriteHalf;
 

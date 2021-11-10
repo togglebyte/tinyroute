@@ -1,5 +1,5 @@
 use tinyroute::client::{connect, ClientMessage, UdsClient};
-use tinyroute::server::{Server, UdsListener};
+use tinyroute::server::{Server, UdsConnections};
 use tinyroute::{Agent, Message, Router, ToAddress};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -35,9 +35,9 @@ async fn remote_message() {
     // Create a server using a unix socket
     let path = "/tmp/tinyroute-server-test.sock";
     let _ = std::fs::remove_file(path);
-    let listener = UdsListener::bind(path).await.unwrap();
+    let connections = UdsConnections::bind(path).await.unwrap();
 
-    let mut server = Server::new(listener, server_agent);
+    let mut server = Server::new(connections, server_agent);
 
     // Create a client in a separate task
     // and send a remote message

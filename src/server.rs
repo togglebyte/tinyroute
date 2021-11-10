@@ -16,7 +16,7 @@ use log::error;
 use crate::ADDRESS_SEP;
 use crate::runtime::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use crate::{spawn, sleep};
-pub use crate::runtime::{TcpListener, UdsListener};
+pub use crate::runtime::{TcpConnections, UdsConnections, TcpListener, UdsListener};
 
 use crate::agent::{Agent, Message};
 use crate::errors::{Error, Result};
@@ -45,7 +45,7 @@ impl Payload {
 }
 
 /// Some kind of listener
-pub trait Listener: Sync {
+pub trait Connections: Sync {
     /// The reading half of the connection
     type Reader: AsyncRead + Unpin + Send + 'static;
     /// The writing half of the connection
@@ -69,7 +69,7 @@ pub type ServerFuture<'a, T, U> = Pin<Box<dyn Future<Output = Result<(T, U, Conn
 /// Accept incoming connections and provide agents as an abstraction.
 ///
 /// ```
-/// use tinyroute::server::{Server, TcpListener};
+/// use tinyroute::server::{Server, TcpConnections};
 ///
 /// #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 /// struct Address(usize);
@@ -78,7 +78,7 @@ pub type ServerFuture<'a, T, U> = Pin<Box<dyn Future<Output = Result<(T, U, Conn
 /// #   fn from_bytes(_: &[u8]) -> Option<Self> { None }
 /// # }
 /// # async fn run(mut router: tinyroute::Router<Address>) {
-/// let tcp_listener = TcpListener::bind("127.0.0.1:5000").await.unwrap();
+/// let tcp_listener = TcpConnections::bind("127.0.0.1:5000").await.unwrap();
 /// let server_agent = router.new_agent(1024, Address(0)).unwrap();
 /// let mut server = Server::new(tcp_listener, server_agent);
 /// let mut id = 0;
@@ -92,13 +92,13 @@ pub type ServerFuture<'a, T, U> = Pin<Box<dyn Future<Output = Result<(T, U, Conn
 /// }
 /// # }
 /// ```
-pub struct Server<L: Listener, A: Sync + ToAddress> {
-    server: L,
+pub struct Server<C: Connections, A: Sync + ToAddress> {
+    server: C,
     server_agent: Agent<(), A>,
 }
 
-impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
-    pub fn new(server: L, server_agent: Agent<(), A>) -> Self {
+impl<C: Connections, A: Sync + ToAddress> Server<C, A> {
+    pub fn new(server: C, server_agent: Agent<(), A>) -> Self {
         Self { server, server_agent }
     }
 
@@ -108,19 +108,13 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
         connection_address: A,
         timeout: Option<Duration>,
         cap: usize,
-    ) -> Result<Connection<A, <L as Listener>::Writer>> {
+    ) -> Result<Connection<A, <C as Connections>::Writer>> {
         let (reader, writer, socket_addr) = futures::select! {
             _ = self.server_agent.recv().fuse() => return Err(Error::ChannelClosed),
             con = self.server.accept().fuse() => con?,
         };
 
-        // Register the agent
-        // let (transport_tx, transport_rx) = flume::bounded(cap);
-
         let agent = self.server_agent.new_agent(connection_address.clone(), cap).await?;
-        // TODO: rewrite this to use self.server_agent.new_agent(connection_address.clone(), transport_tx);
-        // self.server_agent.router_tx.register_agent(connection_address.clone(), transport_tx).await?;
-        // let agent = Agent::new(self.server_agent.router_tx.clone(), connection_address.clone(), transport_rx);
 
         // Spawn the reader
         let _reader_handle = spawn(

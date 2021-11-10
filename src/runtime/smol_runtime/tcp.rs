@@ -4,30 +4,31 @@ pub use smol::io::{
     AsyncWriteExt,
     AsyncReadExt
 };
-use smol::net::{TcpStream, AsyncToSocketAddrs, TcpListener as SmolTcpListener};
+use smol::net::{TcpStream, AsyncToSocketAddrs};
+pub use smol::net::TcpListener;
 
 use crate::errors::Result;
-use crate::server::{ServerFuture, Listener, ConnectionAddr};
+use crate::server::{ServerFuture, Connections, ConnectionAddr};
 use crate::client::Client;
 
 // -----------------------------------------------------------------------------
 //     - Tcp listener -
 // -----------------------------------------------------------------------------
 /// A tcp listener
-pub struct TcpListener {
-    inner: SmolTcpListener,
+pub struct TcpConnections {
+    inner: TcpListener,
 }
 
-impl TcpListener {
+impl TcpConnections {
     /// Create a new tcp server given an address
     ///
     /// ```
-    /// # use tinyroute::server::TcpListener;
+    /// # use tinyroute::server::TcpConnections;
     /// # async fn run() {
-    /// let listener = TcpListener::bind("127.0.0.1:5000").await.expect("fail");
+    /// let listener = TcpConnections::bind("127.0.0.1:5000").await.expect("fail");
     /// # }
     pub async fn bind(addr: &str) -> Result<Self> {
-        let inner = SmolTcpListener::bind(addr).await?;
+        let inner = TcpListener::bind(addr).await?;
 
         let inst = Self {
             inner,
@@ -37,7 +38,7 @@ impl TcpListener {
     }
 }
 
-impl Listener for TcpListener {
+impl Connections for TcpConnections {
     type Reader = TcpStream;
     type Writer = TcpStream;
 

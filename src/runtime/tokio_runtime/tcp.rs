@@ -1,26 +1,26 @@
-use tokio::net::TcpListener as TokioListener;
+pub use tokio::net::TcpListener;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpStream, ToSocketAddrs};
 
 use crate::errors::Result;
-use crate::server::{ServerFuture, Listener, ConnectionAddr};
+use crate::server::{ServerFuture, Connections, ConnectionAddr};
 use crate::client::Client;
 
 /// A tcp listener
-pub struct TcpListener {
-    inner: TokioListener,
+pub struct TcpConnections {
+    inner: TcpListener,
 }
 
-impl TcpListener {
+impl TcpConnections {
     /// Create a new tcp server given an address
     ///
     /// ```
-    /// # use tinyroute::server::TcpListener;
+    /// # use tinyroute::server::TcpConnections;
     /// # async fn run() {
-    /// let listener = TcpListener::bind("127.0.0.1:5000").await.expect("fail");
+    /// let listener = TcpConnections::bind("127.0.0.1:5000").await.expect("fail");
     /// # }
     pub async fn bind(addr: &str) -> Result<Self> {
-        let inner = TokioListener::bind(addr).await?;
+        let inner = TcpListener::bind(addr).await?;
 
         let inst = Self {
             inner,
@@ -30,7 +30,7 @@ impl TcpListener {
     }
 }
 
-impl Listener for TcpListener {
+impl Connections for TcpConnections {
     type Reader = OwnedReadHalf;
     type Writer = OwnedWriteHalf;
 

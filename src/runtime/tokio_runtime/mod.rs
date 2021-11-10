@@ -12,8 +12,8 @@ pub use tokio::io::{
 mod tcp;
 mod uds;
 
-pub use tcp::{TcpListener, TcpClient};
-pub use uds::{UdsListener, UdsClient};
+pub use tcp::{TcpListener, TcpClient, TcpConnections};
+pub use uds::{UdsListener, UdsClient, UdsConnections};
 
 pub fn block_on<T: Send + 'static>(fut: impl Future<Output=T> + Send + 'static) {
     tokio::runtime::Builder::new_multi_thread()

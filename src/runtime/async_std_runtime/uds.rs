@@ -1,26 +1,27 @@
 use std::path::Path;
 
-use async_std::os::unix::net::{UnixListener as AsyncStdListener, UnixStream};
+use async_std::os::unix::net::UnixStream;
+pub use async_std::os::unix::net::{UnixListener as UdsListener};
 
 use crate::errors::Result;
-use crate::server::{ServerFuture, Listener, ConnectionAddr};
+use crate::server::{ServerFuture, Connections, ConnectionAddr};
 use crate::client::Client;
 
 /// A unix domain socket server
-pub struct UdsListener {
-    inner: AsyncStdListener,
+pub struct UdsConnections {
+    inner: UdsListener,
 }
 
-impl UdsListener {
+impl UdsConnections {
     /// Create a new uds server given a path.
     ///
     /// ```
-    /// # use tinyroute::server::UdsListener;
+    /// # use tinyroute::server::UdsConnections;
     /// # async fn run() {
-    /// let listener = UdsListener::bind("/tmp/my-file.sock").await.expect("failed to crate socket");
+    /// let listener = UdsConnections::bind("/tmp/my-file.sock").await.expect("failed to crate socket");
     /// # }
     pub async fn bind(addr: impl AsRef<Path>) -> Result<Self> {
-        let inner = AsyncStdListener::bind(addr.as_ref()).await?;
+        let inner = UdsListener::bind(addr.as_ref()).await?;
 
         let inst = Self {
             inner,
@@ -30,7 +31,7 @@ impl UdsListener {
     }
 }
 
-impl Listener for UdsListener {
+impl Connections for UdsConnections {
     type Reader = UnixStream;
     type Writer = UnixStream;
 
