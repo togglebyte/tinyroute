@@ -16,8 +16,6 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: Build
-      run: cargo build --verbose
     - name: Run tests (tokio)
       run: cargo test --verbose --features=tokio-rt
     - name: Run tests (smol)
