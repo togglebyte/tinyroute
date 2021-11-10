@@ -38,7 +38,7 @@ async fn run(rx: flume::Receiver<FramedMessage>, addr: String) {
         }
     }
 
-    read_handle.await;
+    let _ = read_handle.await;
 }
 
 async fn output(read_rx: flume::Receiver<Vec<u8>>) -> Option<()> {

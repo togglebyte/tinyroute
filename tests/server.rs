@@ -30,7 +30,6 @@ fn setup() -> (Agent<String, Address>, Agent<(), Address>, Router<Address>) {
 async fn remote_message() {
     // Setup agents and router, and start the router
     let (agent_a, server_agent, router) = setup();
-    let router_tx = router.router_tx();
     let handle = tokio::spawn(async move { router.run().await });
 
     // Create a server using a unix socket
@@ -49,7 +48,7 @@ async fn remote_message() {
         tx.send_async(message).await.unwrap();
     });
 
-    let mut connection = server.next(router_tx, Address::Con, None, 10).await.unwrap();
+    let mut connection = server.next(Address::Con, None, 10).await.unwrap();
     let msg = connection.recv().await.unwrap().unwrap();
 
     match msg {

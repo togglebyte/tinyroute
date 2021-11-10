@@ -73,9 +73,9 @@ async fn run() {
 
     // Block on the log
     log(log_agent).await;
-    router_handle.await;
-    tcp_handle.await;
-    uds_handle.await;
+    let _ = router_handle.await;
+    let _ = tcp_handle.await;
+    let _ = uds_handle.await;
 }
 
 fn main() {

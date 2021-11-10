@@ -13,7 +13,9 @@ use bytes::Bytes;
 use futures::future::FutureExt;
 use log::error;
 
-use crate::runtime::{spawn, sleep, AsyncRead, AsyncWrite, AsyncWriteExt};
+use crate::ADDRESS_SEP;
+use crate::runtime::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use crate::{spawn, sleep};
 pub use crate::runtime::{TcpListener, UdsListener};
 
 use crate::agent::{Agent, Message};
@@ -82,7 +84,6 @@ pub type ServerFuture<'a, T, U> = Pin<Box<dyn Future<Output = Result<(T, U, Conn
 /// let mut id = 0;
 ///
 /// while let Ok(connection) = server.next(
-///     router.router_tx(),
 ///     Address(id),
 ///     None,
 ///     1024
@@ -104,7 +105,6 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
     /// Produce a [`Connection`]
     pub async fn next(
         &mut self,
-        router_tx: RouterTx<A>,
         connection_address: A,
         timeout: Option<Duration>,
         cap: usize,
@@ -115,19 +115,26 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
         };
 
         // Register the agent
-        let (transport_tx, transport_rx) = flume::bounded(cap);
+        // let (transport_tx, transport_rx) = flume::bounded(cap);
 
-        router_tx.register_agent(connection_address.clone(), transport_tx).await?;
-
-        let agent = Agent::new(router_tx.clone(), connection_address.clone(), transport_rx);
+        let agent = self.server_agent.new_agent(connection_address.clone(), cap).await?;
+        // TODO: rewrite this to use self.server_agent.new_agent(connection_address.clone(), transport_tx);
+        // self.server_agent.router_tx.register_agent(connection_address.clone(), transport_tx).await?;
+        // let agent = Agent::new(self.server_agent.router_tx.clone(), connection_address.clone(), transport_rx);
 
         // Spawn the reader
-        let reader_handle = spawn(spawn_reader(reader, connection_address, socket_addr, router_tx, timeout));
+        let _reader_handle = spawn(
+            spawn_reader(
+                reader,
+                connection_address,
+                socket_addr,
+                self.server_agent.router_tx.clone(),
+                timeout
+            )
+        ); 
 
-        #[cfg(feature="smol_rt")]
-        reader_handle.detach();
-        #[cfg(not(feature="smol_rt"))]
-        let _ = reader_handle;
+        #[cfg(feature = "smol-rt")]
+        _reader_handle.detach();
 
         Ok(Connection::new(agent, writer))
     }
@@ -138,7 +145,7 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
     /// This is useful when letting the router handle the connections,
     /// and all messages are passed as [`Message::RemoteMessage`].
     pub async fn run<F: FnMut() -> A>(mut self, timeout: Option<Duration>, mut f: F) -> Result<()> {
-        while let Ok(mut connection) = self.next(self.server_agent.router_tx.clone(), (f)(), timeout, 1024).await {
+        while let Ok(mut connection) = self.next((f)(), timeout, 1024).await {
             let server_handle = spawn(async move {
                 loop {
                     match connection.recv().await {
@@ -152,12 +159,52 @@ impl<L: Listener, A: Sync + ToAddress> Server<L, A> {
                 }
             });
 
-            #[cfg(feature="smol_rt")]
+            #[cfg(feature = "smol-rt")]
             server_handle.detach();
-            #[cfg(not(feature="smol_rt"))]
+            #[cfg(not(feature = "smol-rt"))]
             let _ = server_handle;
         }
         Ok(())
+    }
+}
+
+pub async fn handle_payload<A: ToAddress>(
+    bytes: Vec<u8>,
+    router_tx: &RouterTx<A>,
+    socket_addr: ConnectionAddr,
+    sender: A,
+) -> bool {
+    let address = bytes.iter().cloned().take_while(|b| *b != ADDRESS_SEP).collect::<Vec<u8>>();
+
+    // return in the event of the index being
+    // larger than the payload it self
+    let index = address.len() + 1;
+    if index >= bytes.len() {
+        return true;
+    }
+
+    let address = match A::from_bytes(&address) {
+        Some(a) => a,
+        None => return true,
+    };
+
+    let payload = Payload::new(index, bytes);
+    let bytes = Bytes::from(payload.data().to_vec());
+
+    match router_tx
+        .send(RouterMessage::RemoteMessage {
+            bytes,
+            sender: sender,
+            host: socket_addr,
+            recipient: address,
+        })
+        .await
+    {
+        Ok(_) => true,
+        Err(e) => {
+            error!("failed to send message to router: {}", e);
+            return false
+        }
     }
 }
 
@@ -178,55 +225,62 @@ async fn spawn_reader<A, R>(
 
             'msg: loop {
                 match res {
+                    Err(e) => {
+                        error!("failed to read from the socket. reason: {:?}", e);
+                        break 'msg false;
+                    }
                     Ok(0) => break 'msg false,
                     Ok(_) => {
                         match frame.try_msg() {
-                            Ok(Some(FrameOutput::Heartbeat)) => continue,
-                            Ok(Some(FrameOutput::Message(msg))) => {
-                                let address =
-                                    msg.iter().cloned().take_while(|b| (*b as char) != '|').collect::<Vec<u8>>();
-
-                                // return in the event of the index being
-                                // larger than the payload it self
-                                let index = address.len() + 1;
-                                if index >= msg.len() {
-                                    return true;
-                                }
-
-                                let address = match A::from_bytes(&address) {
-                                    Some(a) => a,
-                                    None => break 'msg true,
-                                };
-
-                                let payload = Payload::new(index, msg);
-                                let bytes = Bytes::from(payload.data().to_vec());
-
-                                match router_tx
-                                    .send(RouterMessage::RemoteMessage {
-                                        bytes,
-                                        sender: sender.clone(),
-                                        host: socket_addr.clone(),
-                                        recipient: address,
-                                    })
-                                    .await
-                                {
-                                    Ok(_) => continue,
-                                    Err(e) => {
-                                        error!("failed to send message to router: {}", e);
-                                        break 'msg false;
-                                    }
-                                }
-                            }
                             Ok(None) => break 'msg true,
                             Err(e) => {
                                 error!("invalid payload. {}", e);
                                 break 'msg false;
                             }
+                            Ok(Some(FrameOutput::Heartbeat)) => continue,
+                            Ok(Some(FrameOutput::Message(msg))) => {
+                                break handle_payload(
+                                    msg,
+                                    &router_tx,
+                                    socket_addr.clone(),
+                                    sender.clone()
+                                ).await
+
+                                // let address =
+                                //     msg.iter().cloned().take_while(|b| *b != ADDRESS_SEP).collect::<Vec<u8>>();
+
+                                // // return in the event of the index being
+                                // // larger than the payload it self
+                                // let index = address.len() + 1;
+                                // if index >= msg.len() {
+                                //     return true;
+                                // }
+
+                                // let address = match A::from_bytes(&address) {
+                                //     Some(a) => a,
+                                //     None => break 'msg true,
+                                // };
+
+                                // let payload = Payload::new(index, msg);
+                                // let bytes = Bytes::from(payload.data().to_vec());
+
+                                // match router_tx
+                                //     .send(RouterMessage::RemoteMessage {
+                                //         bytes,
+                                //         sender: sender.clone(),
+                                //         host: socket_addr.clone(),
+                                //         recipient: address,
+                                //     })
+                                //     .await
+                                // {
+                                //     Ok(_) => continue,
+                                //     Err(e) => {
+                                //         error!("failed to send message to router: {}", e);
+                                //         break 'msg false;
+                                //     }
+                                // }
+                            }
                         }
-                    }
-                    Err(e) => {
-                        error!("failed to read from the socket. reason: {:?}", e);
-                        break 'msg false;
                     }
                 }
             }
@@ -253,6 +307,9 @@ async fn spawn_reader<A, R>(
     }
 }
 
+// -----------------------------------------------------------------------------
+//     - Connection -
+// -----------------------------------------------------------------------------
 pub struct Connection<A, W>
 where
     A: ToAddress,
@@ -289,7 +346,6 @@ where
 #[derive(Debug, Clone)]
 pub enum ConnectionAddr {
     Tcp(std::net::SocketAddr),
-    #[cfg(target_os = "linux")]
     Uds,
 }
 

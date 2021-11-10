@@ -5,9 +5,9 @@ edition = "2021"
 
 [features]
 default = []
-tokio_rt = ["tokio"]
-async_std_rt = ["async-std"]
-smol_rt = ["smol"]
+tokio-rt = ["tokio"]
+async-std-rt = ["async-std"]
+smol-rt = ["smol"]
 
 [dependencies]
 bytes = "1.1.0"

@@ -32,7 +32,7 @@ async fn run(rx: flume::Receiver<FramedMessage>, port: u16) {
     let (write_tx, read_rx) = connect(client, Some(Duration::from_secs(30)));
 
     let _handle = spawn(output(read_rx));
-    #[cfg(feature="smol_rt")]
+    #[cfg(feature="smol-rt")]
     _handle.detach();
 
     while let Ok(bytes) = rx.recv() {

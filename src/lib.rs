@@ -1,7 +1,17 @@
-#[cfg(all(not(feature = "tokio_rt"), not(feature = "async_std_rt"), not(feature = "smol_rt")))]
-compile_error!("Specify a runtime: either tokio_rt, async_std_rt or smol_rt");
+pub const ADDRESS_SEP: u8 = b'|';
 
-#[cfg(any(feature = "tokio_rt", feature = "async_std_rt", feature = "smol_rt"))]
+#[cfg(all(
+    not(feature = "tokio-rt"), 
+    not(feature = "async-std-rt"), 
+    not(feature = "smol-rt")
+))]
+compile_error!("Specify a runtime: either tokio-rt, async-std-rt or smol-rt");
+
+#[cfg(any(
+    feature = "tokio-rt", 
+    feature = "async-std-rt", 
+    feature = "smol-rt")
+)]
 macro_rules! tinyroute {
     () => {
         mod router;
@@ -21,6 +31,7 @@ macro_rules! tinyroute {
         pub use bytes::Bytes;
         pub use router::{AddressToBytes, Router, RouterTx, ToAddress};
         pub use runtime::{block_on, sleep, spawn};
+        pub use flume::{bounded, unbounded};
 
         pub mod task {
             pub use crate::runtime::JoinHandle;
@@ -32,5 +43,13 @@ macro_rules! tinyroute {
     };
 }
 
-#[cfg(any(feature = "tokio_rt", feature = "async_std_rt", feature = "smol_rt"))]
+#[cfg(any(
+    feature = "tokio-rt",
+    feature = "async-std-rt",
+    feature = "smol-rt")
+)]
 tinyroute!();
+
+
+#[cfg(feature = "websockets")]
+pub mod websockets;

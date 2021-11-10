@@ -11,7 +11,7 @@ use crate::client::{
 };
 use crate::errors::{Error, Result};
 use crate::frame::{Frame, FramedMessage};
-use crate::{AddressToBytes, ToAddress};
+use crate::{AddressToBytes, ToAddress, ADDRESS_SEP};
 
 /// An outgoing message from a [`Bridge`]
 #[derive(Debug, Clone)]
@@ -48,9 +48,9 @@ impl BridgeMessageOut {
             sender_bytes.len() + 1 + remote_recipient.len() + 1 + bytes.len(),
         );
         payload.extend_from_slice(&remote_recipient);
-        payload.push(b'|');
+        payload.push(ADDRESS_SEP);
         payload.extend_from_slice(&sender_bytes);
-        payload.push(b'|');
+        payload.push(ADDRESS_SEP);
         payload.extend_from_slice(&bytes);
         let framed_message = Frame::frame_message(&payload);
         Self(framed_message)
@@ -62,9 +62,9 @@ impl BridgeMessageOut {
 /// ```
 /// use tinyroute::bridge::BridgeMessageIn;
 ///
-/// # use tinyroute::Bytes;
+/// # use tinyroute::{Bytes, ADDRESS_SEP};
 /// # fn run<A: tinyroute::ToAddress + tinyroute::AddressToBytes>(agent: tinyroute::Agent<(), A>, bridge_address: A) {
-/// let payload = b"a_remote_address|a message".to_vec();
+/// let payload = format!("a_remote_address{}a message", ADDRESS_SEP).into_bytes();
 /// let message = BridgeMessageIn::decode(payload.into()).unwrap();
 /// assert_eq!(message.sender.as_ref(), b"a_remote_address");
 /// assert_eq!(message.message.as_ref(), b"a message");
@@ -81,7 +81,7 @@ impl BridgeMessageIn {
     pub fn decode(input: Bytes) -> Result<BridgeMessageIn> {
         let sender_address = input
             .iter()
-            .take_while(|b| (**b as char) != '|')
+            .take_while(|b| **b != ADDRESS_SEP)
             .cloned()
             .collect::<Vec<u8>>();
 
