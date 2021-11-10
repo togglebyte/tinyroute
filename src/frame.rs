@@ -30,6 +30,7 @@ pub struct FramedMessage(pub Bytes);
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
+#[non_exhaustive]
 pub(crate) enum Header {
     Unset,
     Small, // Content length is  u8::MAX
