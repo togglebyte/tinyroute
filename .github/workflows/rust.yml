@@ -1,0 +1,26 @@
+name: Rust
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build
+      run: cargo build --verbose
+    - name: Run tests (tokio)
+      run: cargo test --verbose --features=tokio-rt
+    - name: Run tests (smol)
+      run: cargo test --verbose --features=smol-rt
+    - name: Run tests (async std)
+      run: cargo test --verbose --features=async-std-rt
