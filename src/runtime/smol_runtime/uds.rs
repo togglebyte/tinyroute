@@ -1,7 +1,6 @@
 use std::path::Path;
 
-pub use smol::net::unix::{UnixListener as UdsListener};
-use smol::net::unix::UnixStream;
+use smol::net::unix::{UnixListener as UdsListener, UnixStream as UdsStream};
 
 use crate::errors::Result;
 use crate::server::{ServerFuture, Connections, ConnectionAddr};
@@ -32,8 +31,8 @@ impl UdsConnections {
 }
 
 impl Connections for UdsConnections {
-    type Reader = UnixStream;
-    type Writer = UnixStream;
+    type Reader = UdsStream;
+    type Writer = UdsStream;
 
     fn accept(&mut self) -> ServerFuture<'_, Self::Reader, Self::Writer> {
         let future = async move {
@@ -54,13 +53,13 @@ impl Connections for UdsConnections {
 /// # }
 /// ```
 pub struct UdsClient {
-    inner: UnixStream,
+    inner: UdsStream,
 }
 
 impl UdsClient {
     /// Establish a tcp connection
     pub async fn connect(addr: impl AsRef<Path>) -> Result<Self> {
-        let inner = UnixStream::connect(addr.as_ref()).await?;
+        let inner = UdsStream::connect(addr.as_ref()).await?;
 
         let inst = Self {
             inner
@@ -71,8 +70,8 @@ impl UdsClient {
 }
 
 impl Client for UdsClient {
-    type Reader = UnixStream;
-    type Writer = UnixStream;
+    type Reader = UdsStream;
+    type Writer = UdsStream;
 
     fn split(self) -> (Self::Reader, Self::Writer) {
         let reader = self.inner;

@@ -40,7 +40,7 @@ use std::time::Duration;
 
 use crate::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use crate::{sleep, spawn, ADDRESS_SEP};
-pub use crate::runtime::{UdsClient, TcpClient};
+pub use crate::runtime::{UdsClient, TcpClient, TcpStream};
 
 use crate::errors::{Result, Error};
 use crate::frame::{Frame, FrameOutput, FramedMessage};

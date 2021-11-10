@@ -4,8 +4,7 @@ pub use smol::io::{
     AsyncWriteExt,
     AsyncReadExt
 };
-use smol::net::{TcpStream, AsyncToSocketAddrs};
-pub use smol::net::TcpListener;
+use smol::net::{TcpListener, TcpStream, AsyncToSocketAddrs};
 
 use crate::errors::Result;
 use crate::server::{ServerFuture, Connections, ConnectionAddr};

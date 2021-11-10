@@ -5,8 +5,7 @@ pub use async_std::io::{
     WriteExt as AsyncWriteExt,
     ReadExt as AsyncReadExt
 };
-use async_std::net::{TcpStream, ToSocketAddrs};
-pub use async_std::net::TcpListener;
+use async_std::net::{TcpStream, TcpListener, ToSocketAddrs};
 
 use crate::errors::Result;
 use crate::server::{ServerFuture, Connections, ConnectionAddr};

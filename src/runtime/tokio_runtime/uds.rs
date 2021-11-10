@@ -1,7 +1,6 @@
 use std::path::Path;
 
-pub use tokio::net::UnixListener as UdsListener;
-use tokio::net::UnixStream;
+use tokio::net::{UnixListener as UdsListener, UnixStream as UdsStream};
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 
 use crate::errors::Result;
@@ -55,13 +54,13 @@ impl Connections for UdsConnections {
 /// # }
 /// ```
 pub struct UdsClient {
-    inner: UnixStream,
+    inner: UdsStream,
 }
 
 impl UdsClient {
     /// Establish a tcp connection
     pub async fn connect(addr: impl AsRef<Path>) -> Result<Self> {
-        let inner = UnixStream::connect(addr).await?;
+        let inner = UdsStream::connect(addr).await?;
 
         let inst = Self {
             inner

@@ -1,6 +1,5 @@
-pub use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
-use tokio::net::{TcpStream, ToSocketAddrs};
 
 use crate::errors::Result;
 use crate::server::{ServerFuture, Connections, ConnectionAddr};
