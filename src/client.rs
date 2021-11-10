@@ -39,7 +39,7 @@ use rand::prelude::*;
 use std::time::Duration;
 
 use crate::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
-use crate::{sleep, spawn};
+use crate::{sleep, spawn, ADDRESS_SEP};
 pub use crate::runtime::{UdsClient, TcpClient};
 
 use crate::errors::{Result, Error};
@@ -75,7 +75,7 @@ impl ClientMessage {
     pub fn channel_payload(channel: &[u8], payload: &[u8]) -> Self {
         let mut buf = Vec::with_capacity(channel.len() + 1 + payload.len());
         buf.extend_from_slice(channel);
-        buf.push(b'|');
+        buf.push(ADDRESS_SEP);
         buf.extend_from_slice(payload);
         let framed_message = Frame::frame_message(&buf);
         ClientMessage::Payload(framed_message)

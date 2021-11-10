@@ -191,7 +191,7 @@ impl<T: Debug + 'static, A: ToAddress> Debug for Message<T, A> {
 // -----------------------------------------------------------------------------
 //     - Agent message -
 // -----------------------------------------------------------------------------
-pub(crate) enum AgentMsg<A: ToAddress> {
+pub(crate) enum AgentMsg<A> {
     Message(AnyMessage, A), // A is the address of the sender
     RemoteMessage(Bytes, A, ConnectionAddr),
     AgentRemoved(A),
@@ -242,6 +242,26 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
         Self { router_tx, rx, address, _p: PhantomData }
     }
 
+    /// Create a new agent and register it with the router.
+    ///
+    /// ```
+    /// # use tinyroute::{Agent, ToAddress};
+    /// #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    /// # pub enum Address {
+    /// #     NewAgent,
+    /// # }
+    /// # 
+    /// # impl ToAddress for Address {
+    /// #     fn from_bytes(bytes: &[u8]) -> Option<Address> {
+    /// #         match bytes {
+    /// #             _ => None
+    /// #         }
+    /// #     }
+    /// # }
+    /// # async fn run(agent: Agent<(), Address>) {
+    /// let new_agent = agent.new_agent::<()>(Address::NewAgent, 1024).await.unwrap();
+    /// # }
+    /// ```
     pub async fn new_agent<U: Send + 'static>(
         &self,
         address: A,
@@ -254,6 +274,13 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
         Ok(agent)
     }
 
+    pub fn router_tx(&self) -> RouterTx<A> {
+        self.router_tx.clone()
+    }
+
+    /// Track an agent (or more precisely an address).
+    /// If the address is unregistered, the tracking agent will
+    /// receive a `Message::AgentRemoved(tracked_address)`.
     pub async fn track(&self, address: A) -> Result<()> {
         self.router_tx.send(RouterMessage::Track {
             from: self.address.clone(),
@@ -262,6 +289,9 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
         Ok(())
     }
 
+    /// Tell one address to track this agents address.
+    /// If this agents address is unregistered, the tracking agent will
+    /// receive a `Message::AgentRemoved(tracked_address)`.
     pub async fn reverse_track(&self, address: A) -> Result<()> {
         self.router_tx.send(RouterMessage::Track {
             from: address,
@@ -270,6 +300,7 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
         Ok(())
     }
 
+    /// The agents address
     pub fn address(&self) -> &A {
         &self.address
     }
@@ -319,11 +350,15 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
         let _ = self.router_tx.send(RouterMessage::PrintChannels);
     }
 
+    /// Shutdown the agent and unregister it with the router.
     pub fn shutdown(&self) {
         let router_msg = RouterMessage::Shutdown(self.address.clone());
         let _ = self.router_tx.send(router_msg);
     }
 
+    /// Shutdown the router and unregister ALL agents with the router.
+    /// Any agent registered with the router should be dropped at this point
+    /// as they can no longer receive or send message.
     pub async fn shutdown_router(&self) {
         let _ = self.router_tx.send(RouterMessage::ShutdownRouter).await;
     }
