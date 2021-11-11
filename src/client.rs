@@ -50,13 +50,15 @@ pub type ClientReceiver = flume::Receiver<Vec<u8>>;
 /// Type alias for `tokio::mpsc::Sender<ClientMessage>`
 pub type ClientSender = flume::Sender<ClientMessage>;
 
-/// Client message
+/// Client message: a message sent by a client.
+/// The server will only ever see the payload bytes.
 #[derive(Debug)]
 pub enum ClientMessage {
     /// Shut down the client
     Quit,
     /// Bunch of delicious bytes
     Payload(FramedMessage),
+    Raw(Vec<u8>),
     /// Heartbeats
     Heartbeat,
 }
@@ -79,6 +81,14 @@ impl ClientMessage {
         buf.extend_from_slice(payload);
         let framed_message = Frame::frame_message(&buf);
         ClientMessage::Payload(framed_message)
+    }
+
+    pub fn channel_payload_raw(channel: &[u8], payload: &[u8]) -> Self {
+        let mut buf = Vec::with_capacity(channel.len() + 1 + payload.len());
+        buf.extend_from_slice(channel);
+        buf.push(ADDRESS_SEP);
+        buf.extend_from_slice(payload);
+        ClientMessage::Raw(buf)
     }
 }
 
@@ -103,32 +113,25 @@ pub fn connect(
 
     let (reader, writer) = connection.split();
 
-    let read_handle = spawn(use_reader(reader, reader_tx, writer_tx.clone()));
-    let write_handle = spawn(use_writer(writer, writer_rx));
+    let _read_handle = spawn(use_reader(reader, reader_tx, writer_tx.clone()));
+    let _write_handle = spawn(use_writer(writer, writer_rx));
 
     #[cfg(feature="smol-rt")]
     {
-        read_handle.detach();
-        write_handle.detach();
-    }
-    #[cfg(not(feature="smol-rt"))]
-    {
-        let _ = read_handle;
-        let _ = write_handle;
+        _read_handle.detach();
+        _write_handle.detach();
     }
 
     if let Some(freq) = heartbeat {
-        let beat_handle = spawn(run_heartbeat(freq, writer_tx.clone()));
+        let _beat_handle = spawn(run_heartbeat(freq, writer_tx.clone()));
         #[cfg(feature="smol-rt")]
-        beat_handle.detach();
-        #[cfg(not(feature="smol-rt"))]
-        let _ = beat_handle;
+        _beat_handle.detach();
     }
 
     (writer_tx, reader_rx)
 }
 
-async fn run_heartbeat(freq: Duration, writer_tx: flume::Sender<ClientMessage>) {
+pub async fn run_heartbeat(freq: Duration, writer_tx: flume::Sender<ClientMessage>) {
     info!("Start beat");
     // Heart beat should never be less than a second
     assert!(
@@ -162,7 +165,7 @@ async fn use_reader(
     let mut frame = Frame::empty();
 
     'read: loop {
-        let res = frame.async_read(&mut reader).await;
+        let res = frame.read_async(&mut reader).await;
 
         'msg: loop {
             match res {
@@ -170,8 +173,15 @@ async fn use_reader(
                 Ok(_) => match frame.try_msg() {
                     Ok(None) => break 'msg,
                     Ok(Some(FrameOutput::Heartbeat)) => error!("received a heartbeat on the reader"),
-                    Ok(Some(FrameOutput::Message(payload))) => drop(output_tx.send(payload)),
-                    Err(Error::MalformedHeader) => {}
+                    Ok(Some(FrameOutput::Message(payload))) => {
+                        if let Err(e) = output_tx.send_async(payload).await {
+                            error!("Failed to send client message: {}", e);
+                        }
+                    }
+                    Err(Error::MalformedHeader) => {
+                        log::error!("Malformed header");
+                        break 'read;
+                    }
                     Err(_) => unreachable!(),
                 },
                 Err(e) => {
@@ -207,6 +217,10 @@ async fn use_writer(
                     error!("Failed to write payload: {}", e);
                     break;
                 }
+            }
+            ClientMessage::Raw(_) => {
+                error!("Raw message sent to client. This should not happen. Raw messages are for third party libraries that have their own framing");
+                break;
             }
         }
     }

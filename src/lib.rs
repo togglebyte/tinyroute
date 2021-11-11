@@ -31,7 +31,10 @@ macro_rules! tinyroute {
         pub use bytes::Bytes;
         pub use router::{AddressToBytes, Router, RouterTx, ToAddress};
         pub use runtime::{block_on, sleep, spawn};
-        pub use flume::{bounded, unbounded};
+
+        pub mod channels {
+            pub use flume::{bounded, unbounded, Sender, Receiver};
+        }
 
         pub mod task {
             pub use crate::runtime::JoinHandle;

@@ -11,5 +11,5 @@ mod uds;
 
 pub use tcp::{TcpClient, TcpConnections};
 pub use uds::{UdsClient, UdsConnections};
-pub use async_std::os::unix::net::{UnixListener as UdsListener, UnixStream as UdsStream};
 pub use async_std::net::{TcpStream, TcpListener};
+pub use async_std::os::unix::net::{UnixListener as UdsListener, UnixStream as UdsStream};

@@ -31,7 +31,7 @@ pub struct FramedMessage(pub Bytes);
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 #[non_exhaustive]
-pub(crate) enum Header {
+pub enum Header {
     Unset,
     Small, // Content length is  u8::MAX
     Large, // Content length is u32::MAX
@@ -86,7 +86,7 @@ impl Header {
 /// # async fn run(mut reader: impl AsyncRead + Unpin) {
 ///
 /// let mut frame = Frame::empty();
-/// frame.async_read(&mut reader).await.expect("failed to read");
+/// frame.read_async(&mut reader).await.expect("failed to read");
 /// match frame.try_msg() {
 ///     Ok(Some(payload)) => { /* a framed message */ }
 ///     Ok(None) => { /* read was successful, but didn't contain a complete message */ }
@@ -113,7 +113,7 @@ impl Frame {
     }
 
     /// Async read
-    pub async fn async_read<T: AsyncRead + Unpin>(&mut self, reader: &mut T) -> Result<usize> {
+    pub async fn read_async<T: AsyncRead + Unpin>(&mut self, reader: &mut T) -> Result<usize> {
         let slice = self.available_slice_mut();
         let bytes_read = reader.read(slice).await?;
         if bytes_read == 0 {
@@ -128,18 +128,19 @@ impl Frame {
         Ok(bytes_read)
     }
 
-    // /// Perform a `read` on a reader
-    // pub fn read<T: AsyncRead>(&mut self, reader: &mut T) -> io::Result<usize> {
-    //     let slice = self.available_slice_mut();
-    //     let res = reader.read(slice);
-    //     if let Ok(n) = res {
-    //         self.bytes_read += n;
-    //         if self.bytes_read < BUF_SIZE && self.buffer.capacity() > BUF_SIZE {
-    //             self.buffer.resize(BUF_SIZE, 0);
-    //         }
-    //     }
-    //     res
-    // }
+    pub fn extend(&mut self, bytes: &[u8]) -> usize {
+        // As long as there is room in the buffer, keep extending the slice
+        // until either:
+        // * All bytes are consumed
+        // * There is no more room in the buffer, and the buffer
+        //   can not grow.
+        let slice = self.available_slice_mut();
+        let len = slice.len().min(bytes.len());
+        slice[..len].copy_from_slice(&bytes[..len]);
+        self.bytes_read += len;
+        len
+    }
+
 
     /// Frame a message.
     /// This is particularly useful when using the [`crate::client::connect`]
