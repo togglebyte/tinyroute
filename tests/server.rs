@@ -20,8 +20,8 @@ impl ToAddress for Address {
 
 fn setup() -> (Agent<String, Address>, Agent<(), Address>, Router<Address>) {
     let mut router = Router::new();
-    let agent_a = router.new_agent(10, Address::A).unwrap();
-    let agent_b = router.new_agent(10, Address::Server).unwrap();
+    let agent_a = router.new_agent(Some(10), Address::A).unwrap();
+    let agent_b = router.new_agent(Some(10), Address::Server).unwrap();
 
     (agent_a, agent_b, router)
 }
@@ -48,7 +48,7 @@ async fn remote_message() {
         tx.send_async(message).await.unwrap();
     });
 
-    let mut connection = server.next(Address::Con, None, 10).await.unwrap();
+    let mut connection = server.next(Address::Con, None, None).await.unwrap();
     let msg = connection.recv().await.unwrap().unwrap();
 
     match msg {

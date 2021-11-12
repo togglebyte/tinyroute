@@ -17,8 +17,8 @@ impl ToAddress for Address {
 
 fn setup() -> (Agent<String, Address>, Agent<String, Address>, tokio::task::JoinHandle<()>) {
     let mut router = Router::new();
-    let agent_a = router.new_agent::<String>(10, Address::A).unwrap();
-    let agent_b = router.new_agent::<String>(10, Address::B).unwrap();
+    let agent_a = router.new_agent::<String>(Some(10), Address::A).unwrap();
+    let agent_b = router.new_agent::<String>(Some(10), Address::B).unwrap();
 
     let handle = tokio::spawn(async move {
         router.run().await;

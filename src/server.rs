@@ -79,14 +79,14 @@ pub type ServerFuture<'a, T, U> = Pin<Box<dyn Future<Output = Result<(T, U, Conn
 /// # }
 /// # async fn run(mut router: tinyroute::Router<Address>) {
 /// let tcp_listener = TcpConnections::bind("127.0.0.1:5000").await.unwrap();
-/// let server_agent = router.new_agent(1024, Address(0)).unwrap();
+/// let server_agent = router.new_agent(None, Address(0)).unwrap();
 /// let mut server = Server::new(tcp_listener, server_agent);
 /// let mut id = 0;
 ///
 /// while let Ok(connection) = server.next(
 ///     Address(id),
 ///     None,
-///     1024
+///     Some(1024)
 /// ).await {
 ///     id += 1;
 /// }
@@ -107,7 +107,7 @@ impl<C: Connections, A: Sync + ToAddress> Server<C, A> {
         &mut self,
         connection_address: A,
         timeout: Option<Duration>,
-        cap: usize,
+        cap: Option<usize>,
     ) -> Result<Connection<A, <C as Connections>::Writer>> {
         let (reader, writer, socket_addr) = futures::select! {
             _ = self.server_agent.recv().fuse() => return Err(Error::ChannelClosed),
@@ -138,8 +138,10 @@ impl<C: Connections, A: Sync + ToAddress> Server<C, A> {
     ///
     /// This is useful when letting the router handle the connections,
     /// and all messages are passed as [`Message::RemoteMessage`].
-    pub async fn run<F: FnMut() -> A>(mut self, timeout: Option<Duration>, mut f: F) -> Result<()> {
-        while let Ok(mut connection) = self.next((f)(), timeout, 1024).await {
+    pub async fn run<F>(mut self, timeout: Option<Duration>, cap: Option<usize>, mut f: F) -> Result<()> 
+        where F: FnMut() -> A
+    {
+        while let Ok(mut connection) = self.next((f)(), timeout, cap).await {
             let server_handle = spawn(async move {
                 loop {
                     match connection.recv().await {

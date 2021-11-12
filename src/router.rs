@@ -1,13 +1,73 @@
+use std::marker::PhantomData;
 use std::collections::HashMap;
 
 use bytes::Bytes;
 use log::{error, info, warn};
-use flume::bounded;
+use flume::{bounded, Receiver, Sender};
 
 use crate::agent::{Agent, AgentMsg, AnyMessage};
 use crate::errors::{Error, Result};
 use crate::server::ConnectionAddr;
 use crate::runtime::spawn;
+
+// -----------------------------------------------------------------------------
+//     - Request -
+// -----------------------------------------------------------------------------
+pub struct Request {
+    tx: Sender<AnyMessage>,
+    data: Option<AnyMessage>,
+}
+
+impl Request {
+    pub async fn reply_async<T: Send + 'static>(self, data: T) -> Result<()> {
+        self.tx
+            .send_async(AnyMessage::new(data))
+            .await
+            .map_err(|_| Error::GenericChannelSendError)
+    }
+
+    pub fn data<R: Send + 'static>(&mut self) -> Result<Option<R>> {
+        let data = self.data.take();
+
+        match data {
+            Some(d) => match d.0.downcast() {
+                Ok(val) => Ok(Some(*val)),
+                Err(_) => Err(Error::InvalidMessageType),
+            }
+            None => Ok(None)
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+//     - Response -
+// -----------------------------------------------------------------------------
+pub struct Response<T : Send + 'static> {
+    rx: Receiver<AnyMessage>,
+    _p: PhantomData<T>,
+}
+
+impl<T: Send + 'static> Response<T> {
+    pub async fn recv_async(self) -> Result<T> {
+        let any = self.rx.recv_async().await?;
+
+        match any.0.downcast() {
+            Ok(val) => Ok(*val),
+            Err(_) => Err(Error::InvalidMessageType),
+        }
+
+    }
+
+    pub fn recv(self) -> Result<T> {
+        let any = self.rx.recv()?;
+
+        match any.0.downcast() {
+            Ok(val) => Ok(*val),
+            Err(_) => Err(Error::InvalidMessageType),
+        }
+
+    }
+}
 
 // -----------------------------------------------------------------------------
 //     - Router TX -
@@ -18,7 +78,7 @@ pub struct RouterTx<A: ToAddress>(pub(crate) flume::Sender<RouterMessage<A>>);
 impl<A: ToAddress> RouterTx<A> {
     pub(crate) async fn register_agent(&self, address: A, tx: flume::Sender<AgentMsg<A>>) -> Result<()> {
         let (success_tx, success_rx) = bounded(0);
-        self.0.send(RouterMessage::Register(address, tx, success_tx)).map_err(|_| Error::RegisterAgentFailed)?;
+        self.0.send_async(RouterMessage::Register(address, tx, success_tx)).await.map_err(|_| Error::RegisterAgentFailed)?;
         success_rx.recv_async().await.map_err(|_| Error::RegisterAgentFailed)?;
         Ok(())
     }
@@ -36,11 +96,32 @@ impl<A: ToAddress> RouterTx<A> {
             Err(_) => Err(Error::RouterUnrecoverableError),
         }
     }
+
+    /// Request data from another agent. There is no requirement 
+    /// that the agent in question belongs to the same router.
+    /// ```
+    /// ```
+    pub async fn fetch<T: Send + 'static, R: Send + 'static>(&self, address: A, request: Option<R>) -> Result<Response<T>> {
+        let (tx, rx) = bounded(0);
+
+        let request = match request {
+            Some(r) => Some(AnyMessage::new(r)),
+            None => None,
+        };
+
+        let request = Request { tx, data: request };
+        match self.0.send_async(RouterMessage::Fetch(address, request)).await {
+            Ok(()) => Ok(Response { rx, _p: PhantomData }),
+            Err(_) => Err(Error::RouterUnrecoverableError),
+        }
+    }
 }
 
 /// Convert bytes into an address, get a string representation of an address.
 pub trait ToAddress: Send + Clone + Eq + std::hash::Hash + 'static {
-    fn from_bytes(bytes: &[u8]) -> Option<Self>;
+    fn from_bytes(_: &[u8]) -> Option<Self> {
+        None
+    }
 
     fn to_string(&self) -> String {
         "[not implemented for this address]".into()
@@ -56,6 +137,7 @@ pub trait AddressToBytes {
 // -----------------------------------------------------------------------------
 pub(crate) enum RouterMessage<A: ToAddress> {
     Message { recipient: A, sender: A, msg: AnyMessage },
+    Fetch(A, Request),
     // The only thing that should be sending these remote messages
     // are the reader halves of a socket!
     RemoteMessage { recipient: A, sender: A, bytes: Bytes, host: ConnectionAddr },
@@ -95,8 +177,8 @@ pub(crate) enum RouterMessage<A: ToAddress> {
 /// # async fn run() {
 ///
 /// let mut router = Router::<Address>::new();
-/// let mut agent_a = router.new_agent::<()>(1, Address::A).unwrap();
-/// let mut agent_b = router.new_agent::<()>(1, Address::B).unwrap();
+/// let mut agent_a = router.new_agent::<()>(None, Address::A).unwrap();
+/// let mut agent_b = router.new_agent::<()>(None, Address::B).unwrap();
 ///
 /// agent_a.send(Address::B, ());
 ///
@@ -116,8 +198,11 @@ impl<A: ToAddress + Clone> Router<A> {
         Self { tx, rx, channels: HashMap::new(), subscriptions: HashMap::new() }
     }
 
-    pub fn new_agent<T: Send + 'static>(&mut self, cap: usize, address: A) -> Result<Agent<T, A>> {
-        let (tx, transport_rx) = flume::bounded(cap);
+    pub fn new_agent<T: Send + 'static>(&mut self, cap: Option<usize>, address: A) -> Result<Agent<T, A>> {
+        let (tx, transport_rx) = match cap {
+            Some(cap) => flume::bounded(cap),
+            None => flume::unbounded(),
+        };
         let agent = Agent::new(self.router_tx(), address.clone(), transport_rx);
         if self.channels.contains_key(&address) {
             warn!("There is already an agent registered at \"{}\"", address.to_string());
@@ -187,9 +272,7 @@ impl<A: ToAddress + Clone> Router<A> {
 
                     if tx.send_async(AgentMsg::Message(msg, sender)).await.is_err() {
                         error!("Failed to send a message to \"{}\"", recipient.to_string());
-                        // The receiving half is closed on the agent so
-                        // removeing the channel makes sense
-                        self.channels.remove(&recipient);
+                        self.unregister(recipient).await;
                     }
                 }
                 RouterMessage::RemoteMessage { recipient, sender, bytes, host } => {
@@ -203,9 +286,7 @@ impl<A: ToAddress + Clone> Router<A> {
 
                     if tx.send_async(AgentMsg::RemoteMessage(bytes, sender, host)).await.is_err() {
                         error!("Failed to send a message to \"{}\"", recipient.to_string());
-                        // The receiving half is closed on the agent so
-                        // removeing the channel makes sense
-                        self.channels.remove(&recipient);
+                        self.unregister(recipient).await;
                     }
                 }
                 RouterMessage::Register(address, tx, success_tx) => {
@@ -239,6 +320,20 @@ impl<A: ToAddress + Clone> Router<A> {
                     let _ = tx.send_async(AgentMsg::Shutdown).await;
                     self.unregister(sender).await;
                 }
+                RouterMessage::Fetch(address, request) => {
+                    let tx = match self.channels.get(&address) {
+                        Some(val) => val,
+                        None => {
+                            info!("No channel registered at \"{}\"", address.to_string());
+                            continue;
+                        }
+                    };
+
+                    if tx.send_async(AgentMsg::Fetch(request)).await.is_err() {
+                        error!("Failed to send a message to \"{}\"", address.to_string());
+                        self.unregister(address).await;
+                    }
+                }
             }
         }
 
@@ -262,12 +357,6 @@ mod test {
     }
     
     impl ToAddress for Address {
-        fn from_bytes(bytes: &[u8]) -> Option<Address> {
-            match bytes {
-                _ => None
-            }
-        }
-    
         fn to_string(&self) -> String {
             format!("{:?}", self)
         }
@@ -276,7 +365,7 @@ mod test {
     #[test]
     fn agent_creation() {
         let mut router = Router::new();
-        let agent = router.new_agent::<()>(1024, Address::Agent);
+        let agent = router.new_agent::<()>(None, Address::Agent);
         let actual = agent.is_ok();
         let expected = true;
         assert_eq!(expected, actual);
@@ -286,8 +375,8 @@ mod test {
     fn failed_agent_creation() {
         // Fail to register an agent at an existing address
         let mut router = Router::new();
-        let _agent_ok = router.new_agent::<()>(1024, Address::Agent);
-        let agent_err = router.new_agent::<()>(1024, Address::Agent);
+        let _agent_ok = router.new_agent::<()>(None, Address::Agent);
+        let agent_err = router.new_agent::<()>(None, Address::Agent);
         let actual = agent_err.is_err();
         let expected = true;
         assert_eq!(expected, actual);

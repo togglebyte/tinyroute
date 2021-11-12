@@ -42,9 +42,9 @@ async fn run() {
 
     let mut router = Router::<Address>::new();
 
-    let log_agent = router.new_agent(1024, Address::Log).unwrap();
-    let uds_agent = router.new_agent(1024, Address::Uds).unwrap();
-    let tcp_agent = router.new_agent(1024, Address::Tcp).unwrap();
+    let log_agent = router.new_agent(Some(1024), Address::Log).unwrap();
+    let uds_agent = router.new_agent(Some(1024), Address::Uds).unwrap();
+    let tcp_agent = router.new_agent(Some(1024), Address::Tcp).unwrap();
 
     let uds_listener = UdsConnections::bind(socket_path).await.unwrap();
     let tcp_listener = TcpConnections::bind("127.0.0.1:6789").await.unwrap();
@@ -54,7 +54,7 @@ async fn run() {
     // Start the Uds server
     let uds_handle = spawn(async move { 
         let mut id = 0;
-        uds_server.run(None, || {
+        uds_server.run(None, None, || {
             id += 1;
             Address::UdsCon(id)
         }).await.unwrap(); 
@@ -63,7 +63,7 @@ async fn run() {
     // Start the Tcp server
     let tcp_handle = spawn(async move {
         let mut id = 0;
-        tcp_server.run(None, || {
+        tcp_server.run(None, None, || {
             id += 1;
             Address::TcpCon(id)
         }).await.unwrap(); 
