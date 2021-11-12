@@ -31,6 +31,7 @@ macro_rules! tinyroute {
         pub use bytes::Bytes;
         pub use router::{AddressToBytes, Router, RouterTx, ToAddress};
         pub use runtime::{block_on, sleep, spawn};
+        pub use futures::{select, future::FutureExt};
 
         pub mod channels {
             pub use flume::{bounded, unbounded, Sender, Receiver};
