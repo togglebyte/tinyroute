@@ -271,13 +271,13 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
     /// #     }
     /// # }
     /// # async fn run(agent: Agent<(), Address>) {
-    /// let new_agent = agent.new_agent::<()>(Address::NewAgent, None).await.unwrap();
+    /// let new_agent = agent.new_agent::<()>(None, Address::NewAgent).await.unwrap();
     /// # }
     /// ```
     pub async fn new_agent<U: Send + 'static>(
         &self,
-        address: A,
         cap: Option<usize>,
+        address: A,
     ) -> Result<Agent<U, A>> {
         let (transport_tx, transport_rx) = match cap {
             Some(cap) => flume::bounded(cap),

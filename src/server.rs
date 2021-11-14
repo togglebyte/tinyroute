@@ -114,7 +114,7 @@ impl<C: Connections, A: Sync + ToAddress> Server<C, A> {
             con = self.server.accept().fuse() => con?,
         };
 
-        let agent = self.server_agent.new_agent(connection_address.clone(), cap).await?;
+        let agent = self.server_agent.new_agent(cap, connection_address.clone()).await?;
 
         // Spawn the reader
         let _reader_handle = spawn(
