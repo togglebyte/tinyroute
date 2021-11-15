@@ -99,6 +99,7 @@ impl<A: ToAddress> RouterTx<A> {
 
     /// Request data from another agent. There is no requirement 
     /// that the agent in question belongs to the same router.
+    /// TODO: add example for `fetch`
     /// ```
     /// ```
     pub async fn fetch<T: Send + 'static, R: Send + 'static>(&self, address: A, request: Option<R>) -> Result<Response<T>> {

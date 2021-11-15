@@ -53,7 +53,3 @@ macro_rules! tinyroute {
     feature = "smol-rt")
 )]
 tinyroute!();
-
-
-#[cfg(feature = "websockets")]
-pub mod websockets;
