@@ -41,8 +41,8 @@ impl BridgeMessageOut {
         sender: T,
         remote_recipient: Bytes,
         bytes: Bytes,
-    ) -> Self {
-        let sender_bytes = sender.to_bytes();
+    ) -> Option<Self> {
+        let sender_bytes = sender.to_bytes()?;
         // Sender + | + recipient + | + message
         let mut payload = Vec::with_capacity(
             sender_bytes.len() + 1 + remote_recipient.len() + 1 + bytes.len(),
@@ -53,7 +53,7 @@ impl BridgeMessageOut {
         payload.push(ADDRESS_SEP);
         payload.extend_from_slice(&bytes);
         let framed_message = Frame::frame_message(&payload);
-        Self(framed_message)
+        Some(Self(framed_message))
     }
 }
 

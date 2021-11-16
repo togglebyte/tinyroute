@@ -130,7 +130,7 @@ pub trait ToAddress: Send + Clone + Eq + std::hash::Hash + 'static {
 }
 
 pub trait AddressToBytes {
-    fn to_bytes(&self) -> Vec<u8>;
+    fn to_bytes(&self) -> Option<Vec<u8>>;
 }
 
 // -----------------------------------------------------------------------------
