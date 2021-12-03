@@ -200,15 +200,16 @@ impl<A: ToAddress + Clone> Router<A> {
     }
 
     pub fn new_agent<T: Send + 'static>(&mut self, cap: Option<usize>, address: A) -> Result<Agent<T, A>> {
+        if self.channels.contains_key(&address) {
+            warn!("There is already an agent registered at \"{}\"", address.to_string());
+            return Err(Error::AddressRegistered);
+        }
+
         let (tx, transport_rx) = match cap {
             Some(cap) => flume::bounded(cap),
             None => flume::unbounded(),
         };
         let agent = Agent::new(self.router_tx(), address.clone(), transport_rx);
-        if self.channels.contains_key(&address) {
-            warn!("There is already an agent registered at \"{}\"", address.to_string());
-            return Err(Error::AddressRegistered);
-        }
         self.channels.insert(address, tx);
         Ok(agent)
     }
@@ -243,7 +244,7 @@ impl<A: ToAddress + Clone> Router<A> {
         while let Ok(msg) = self.rx.recv_async().await {
             match msg {
                 RouterMessage::ShutdownRouter => {
-                    let drain = self.channels.drain().map(|(_, tx)|tx);
+                    let drain = self.channels.drain().map(|(_, tx)| tx);
                     for tx in drain {
                         let handle = spawn(async move {
                             let _ = tx.send_async(AgentMsg::Shutdown).await;
@@ -298,7 +299,9 @@ impl<A: ToAddress + Clone> Router<A> {
                     let address_str = address.to_string();
                     self.channels.insert(address, tx);
                     info!("Registered \"{}\"", address_str);
-                    success_tx.send(()).unwrap();
+                    if let Err(e) = success_tx.send(()) {
+                        error!("Failed to reply when registering a new agent: {}", e);
+                    }
                 }
                 RouterMessage::Track { from, to } => {
                     let tracked = self.subscriptions.entry(to).or_insert_with(Vec::new);
