@@ -1,7 +1,6 @@
 //! Creating a server
 //!
 //! ```
-//! # async fn run() {
 //! use tinyroute::server::{Server, TcpConnections};
 //!
 //! #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]

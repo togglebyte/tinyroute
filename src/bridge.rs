@@ -30,7 +30,7 @@ pub enum BridgeError {
 ///
 /// ```
 /// # use tinyroute::Bytes;
-/// # fn run<A: tinyroute::ToAddress + Into<Option<Vec<u8>>>(agent: tinyroute::Agent<(), A>, bridge_address: A) {
+/// # fn run<A: tinyroute::ToAddress + Into<Option<Vec<u8>>>>(agent: tinyroute::Agent<(), A>, bridge_address: A) {
 /// let remote_address = b"some_channel".to_vec();
 /// let message = b"hello world".to_vec();
 /// agent.send_bridged(bridge_address, remote_address.into(), message.into());
