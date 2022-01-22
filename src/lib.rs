@@ -29,7 +29,7 @@ macro_rules! tinyroute {
         // -----------------------------------------------------------------------------
         pub use agent::{Agent, Message};
         pub use bytes::Bytes;
-        pub use router::{AddressToBytes, Router, RouterTx, ToAddress};
+        pub use router::{Router, RouterTx, ToAddress};
         pub use runtime::{block_on, sleep, spawn};
         pub use futures::{select, future::FutureExt};
 

@@ -99,7 +99,7 @@ use bytes::Bytes;
 use crate::bridge::BridgeMessageOut;
 use crate::errors::{Error, Result};
 use crate::frame::Frame;
-use crate::router::{AddressToBytes, RouterMessage, RouterTx, ToAddress, Request};
+use crate::router::{RouterMessage, RouterTx, ToAddress, Request};
 use crate::server::ConnectionAddr;
 
 // -----------------------------------------------------------------------------
@@ -378,7 +378,7 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
     }
 }
 
-impl<T: Send + 'static, A: ToAddress + AddressToBytes> Agent<T, A> {
+impl<T: Send + 'static, A: ToAddress + Into<Option<Vec<u8>>>> Agent<T, A> {
     pub async fn send_bridged(
         &self,
         bridge_address: A,

@@ -2,6 +2,27 @@
 //!
 //! ```
 //! # async fn run() {
+//! use tinyroute::server::{Server, TcpConnections};
+//!
+//! #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+//! struct Address(usize);
+//!
+//! # impl tinyroute::ToAddress for Address {
+//! #   fn from_bytes(_: &[u8]) -> Option<Self> { None }
+//! # }
+//! # async fn run(mut router: tinyroute::Router<Address>) {
+//! let tcp_listener = TcpConnections::bind("127.0.0.1:5000").await.unwrap();
+//! let server_agent = router.new_agent(None, Address(0)).unwrap();
+//! let mut server = Server::new(tcp_listener, server_agent);
+//! let mut id = 0;
+//!
+//! while let Ok(connection) = server.next(
+//!     Address(id),
+//!     None,
+//!     Some(1024)
+//! ).await {
+//!     id += 1;
+//! }
 //! # }
 //! ```
 use std::fmt::{Display, Formatter};
@@ -59,7 +80,9 @@ pub trait Connections: Sync {
     // We need the `Send` part because tokio::spawn might put this on another thread.
     // We need the life time because the thing we return can not hold a reference to
     // anything on &self that might be dropped before self.
-    /// Accept incoming connections
+    /// Accept incoming connections.
+    /// If the `Timeout` is set, this means that the server will close and remove
+    /// the connection if no message has been received within the given duration.
     fn accept(&mut self) -> ServerFuture<'_, Self::Reader, Self::Writer>;
 }
 
@@ -138,6 +161,9 @@ impl<C: Connections, A: Sync + ToAddress> Server<C, A> {
     ///
     /// This is useful when letting the router handle the connections,
     /// and all messages are passed as [`Message::RemoteMessage`].
+    ///
+    /// The `cap` is the message capacity for the [`crate::Agent`] associated with the connection.
+    /// If the capacity is `None` an unbounded receiver is created.
     pub async fn run<F>(mut self, timeout: Option<Duration>, cap: Option<usize>, mut f: F) -> Result<()> 
         where F: FnMut() -> A
     {

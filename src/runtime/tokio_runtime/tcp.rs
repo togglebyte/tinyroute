@@ -5,7 +5,10 @@ use crate::errors::Result;
 use crate::server::{ServerFuture, Connections, ConnectionAddr};
 use crate::client::Client;
 
-/// A tcp listener
+/// Wraps a tcp listener and provides reader, writer and address when accepting
+/// incoming connections.
+///
+/// Connections should be used together with an agent and a [`crate::server::Server`]
 pub struct TcpConnections {
     inner: TcpListener,
 }

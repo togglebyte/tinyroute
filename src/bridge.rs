@@ -11,7 +11,7 @@ use crate::client::{
 };
 use crate::errors::{Error, Result};
 use crate::frame::{Frame, FramedMessage};
-use crate::{AddressToBytes, ToAddress, ADDRESS_SEP};
+use crate::{ToAddress, ADDRESS_SEP};
 
 /// An outgoing message from a [`Bridge`]
 #[derive(Debug, Clone)]
@@ -30,19 +30,19 @@ pub enum BridgeError {
 ///
 /// ```
 /// # use tinyroute::Bytes;
-/// # fn run<A: tinyroute::ToAddress + tinyroute::AddressToBytes>(agent: tinyroute::Agent<(), A>, bridge_address: A) {
+/// # fn run<A: tinyroute::ToAddress + Into<Option<Vec<u8>>>(agent: tinyroute::Agent<(), A>, bridge_address: A) {
 /// let remote_address = b"some_channel".to_vec();
 /// let message = b"hello world".to_vec();
 /// agent.send_bridged(bridge_address, remote_address.into(), message.into());
 /// # }
 /// ```
 impl BridgeMessageOut {
-    pub fn new<T: AddressToBytes>(
+    pub fn new<T: Into<Option<Vec<u8>>>> (
         sender: T,
         remote_recipient: Bytes,
         bytes: Bytes,
     ) -> Option<Self> {
-        let sender_bytes = sender.to_bytes()?;
+        let sender_bytes = sender.into()?;
         // Sender + | + recipient + | + message
         let mut payload = Vec::with_capacity(
             sender_bytes.len() + 1 + remote_recipient.len() + 1 + bytes.len(),
@@ -63,7 +63,7 @@ impl BridgeMessageOut {
 /// use tinyroute::bridge::BridgeMessageIn;
 ///
 /// # use tinyroute::{Bytes, ADDRESS_SEP};
-/// # fn run<A: tinyroute::ToAddress + tinyroute::AddressToBytes>(agent: tinyroute::Agent<(), A>, bridge_address: A) {
+/// # fn run<A: tinyroute::ToAddress + Into<Option<Vec<u8>>>>(agent: tinyroute::Agent<(), A>, bridge_address: A) {
 /// let payload = format!("a_remote_address{}a message", ADDRESS_SEP).into_bytes();
 /// let message = BridgeMessageIn::decode(payload.into()).unwrap();
 /// assert_eq!(message.sender.as_ref(), b"a_remote_address");
