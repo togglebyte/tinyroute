@@ -1,7 +1,6 @@
 //! Creating a server
 //!
 //! ```
-//! # async fn run() {
 //! use tinyroute::server::{Server, TcpConnections};
 //!
 //! #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
@@ -29,21 +28,107 @@ use std::fmt::{Display, Formatter};
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
+use std::path::Path;
 
 use bytes::Bytes;
 use futures::future::FutureExt;
 use log::error;
 
 use crate::ADDRESS_SEP;
-use crate::runtime::{AsyncRead, AsyncWrite, AsyncWriteExt};
-use crate::{spawn, sleep};
-pub use crate::runtime::{TcpConnections, UdsConnections, TcpListener, UdsListener};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio::spawn;
+use tokio::time::sleep;
+// TODO: remove commented out use statements
+// pub use crate::runtime::{TcpConnections, UdsConnections, TcpListener, UdsListener};
+// use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
+pub use tokio::net::{UnixListener, UnixStream, TcpListener, TcpStream};
 
 use crate::agent::{Agent, Message};
 use crate::errors::{Error, Result};
 use crate::frame::{Frame, FrameOutput, FramedMessage};
 
 use crate::router::{RouterMessage, RouterTx, ToAddress};
+
+/// A unix domain socket server
+pub struct UdsConnections {
+    inner: UnixListener,
+}
+
+impl UdsConnections {
+    /// Create a new uds server given a path.
+    ///
+    /// ```
+    /// # use tinyroute::server::UdsConnections;
+    /// # async fn run() {
+    /// let listener = UdsConnections::bind("/tmp/my-file.sock").await.expect("failed to create socket");
+    /// # }
+    pub async fn bind(addr: impl AsRef<Path>) -> Result<Self> {
+        let inner = UnixListener::bind(addr.as_ref())?;
+
+        let inst = Self {
+            inner,
+        };
+
+        Ok(inst)
+    }
+}
+
+impl Connections for UdsConnections {
+    type Reader = tokio::net::unix::OwnedReadHalf;
+    type Writer = tokio::net::unix::OwnedWriteHalf;
+
+    fn accept(&mut self) -> ServerFuture<'_, Self::Reader, Self::Writer> {
+        let future = async move {
+            let (socket, _) = self.inner.accept().await?;
+            let (reader, writer) = socket.into_split();
+            Ok((reader, writer, ConnectionAddr::Uds))
+        };
+
+        Box::pin(future)
+    }
+}
+
+/// Wraps a tcp listener and provides reader, writer and address when accepting
+/// incoming connections.
+///
+/// Connections should be used together with an agent and a [`crate::server::Server`]
+pub struct TcpConnections {
+    inner: TcpListener,
+}
+
+impl TcpConnections {
+    /// Create a new tcp server given an address
+    ///
+    /// ```
+    /// # use tinyroute::server::TcpConnections;
+    /// # async fn run() {
+    /// let listener = TcpConnections::bind("127.0.0.1:5000").await.expect("fail");
+    /// # }
+    pub async fn bind(addr: &str) -> Result<Self> {
+        let inner = TcpListener::bind(addr).await?;
+
+        let inst = Self {
+            inner,
+        };
+
+        Ok(inst)
+    }
+}
+
+impl Connections for TcpConnections {
+    type Reader = tokio::net::tcp::OwnedReadHalf;
+    type Writer = tokio::net::tcp::OwnedWriteHalf;
+
+    fn accept(&mut self) -> ServerFuture<'_, Self::Reader, Self::Writer> {
+        let future = async move {
+            let (socket, addr) = self.inner.accept().await?;
+            let (reader, writer) = socket.into_split();
+            Ok((reader, writer, ConnectionAddr::Tcp(addr)))
+        };
+
+        Box::pin(future)
+    }
+}
 
 /// Client payload.
 /// Access the bytes through `self.data()`

@@ -34,16 +34,21 @@
 //!     }
 //! }
 //! ```
-use log::{error, info};
-use rand::prelude::*;
+use std::path::Path;
 use std::time::Duration;
 
-use crate::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
-use crate::{sleep, spawn, ADDRESS_SEP};
-pub use crate::runtime::{UdsClient, TcpClient, TcpStream};
+use log::{error, info};
+use rand::prelude::*;
+use tokio::net::{TcpStream, UnixStream};
 
-use crate::errors::{Result, Error};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio::net::ToSocketAddrs;
+use tokio::spawn;
+use tokio::time::sleep;
+
+use crate::errors::{Error, Result};
 use crate::frame::{Frame, FrameOutput, FramedMessage};
+use crate::ADDRESS_SEP;
 
 /// Type alias for `tokio::mpsc::Receiver<Vec<u8>>`
 pub type ClientReceiver = flume::Receiver<Vec<u8>>;
@@ -103,11 +108,72 @@ pub trait Client {
     fn split(self) -> (Self::Reader, Self::Writer);
 }
 
+/// ```
+/// # use tinyroute::client::UdsClient;
+/// # async fn run() {
+/// let uds_client = UdsClient::connect("/tmp/tinyroute.sock").await.unwrap();
+/// # }
+/// ```
+pub struct UdsClient {
+    inner: UnixStream,
+}
+
+impl UdsClient {
+    /// Establish a tcp connection
+    pub async fn connect(addr: impl AsRef<Path>) -> Result<Self> {
+        let inner = UnixStream::connect(addr).await?;
+
+        let inst = Self { inner };
+
+        Ok(inst)
+    }
+}
+
+impl Client for UdsClient {
+    type Reader = tokio::net::unix::OwnedReadHalf;
+    type Writer = tokio::net::unix::OwnedWriteHalf;
+
+    fn split(self) -> (Self::Reader, Self::Writer) {
+        let (reader, writer) = self.inner.into_split();
+
+        (reader, writer)
+    }
+}
+
+/// ```
+/// # use tinyroute::client::TcpClient;
+/// # async fn run() {
+/// let tcp_client = TcpClient::connect("127.0.0.1:5000").await.unwrap();
+/// # }
+/// ```
+pub struct TcpClient {
+    pub inner: TcpStream,
+}
+
+impl TcpClient {
+    /// Establish a tcp connection
+    pub async fn connect<A: ToSocketAddrs>(addr: A) -> Result<Self> {
+        let inner = TcpStream::connect(addr).await?;
+
+        let inst = Self { inner };
+
+        Ok(inst)
+    }
+}
+
+impl Client for TcpClient {
+    type Reader = tokio::net::tcp::OwnedReadHalf;
+    type Writer = tokio::net::tcp::OwnedWriteHalf;
+
+    fn split(self) -> (Self::Reader, Self::Writer) {
+        let (reader, writer) = self.inner.into_split();
+
+        (reader, writer)
+    }
+}
+
 /// Get a [`ClientSender`] and [`ClientReceiver`] pair
-pub fn connect(
-    connection: impl Client,
-    heartbeat: Option<Duration>,
-) -> (ClientSender, ClientReceiver) {
+pub fn connect(connection: impl Client, heartbeat: Option<Duration>) -> (ClientSender, ClientReceiver) {
     let (writer_tx, writer_rx) = flume::unbounded();
     let (reader_tx, reader_rx) = flume::unbounded();
 
@@ -116,7 +182,7 @@ pub fn connect(
     let _read_handle = spawn(use_reader(reader, reader_tx, writer_tx.clone()));
     let _write_handle = spawn(use_writer(writer, writer_rx));
 
-    #[cfg(feature="smol-rt")]
+    #[cfg(feature = "smol-rt")]
     {
         _read_handle.detach();
         _write_handle.detach();
@@ -124,7 +190,7 @@ pub fn connect(
 
     if let Some(freq) = heartbeat {
         let _beat_handle = spawn(run_heartbeat(freq, writer_tx.clone()));
-        #[cfg(feature="smol-rt")]
+        #[cfg(feature = "smol-rt")]
         _beat_handle.detach();
     }
 
@@ -134,10 +200,7 @@ pub fn connect(
 pub async fn run_heartbeat(freq: Duration, writer_tx: flume::Sender<ClientMessage>) {
     info!("Start beat");
     // Heart beat should never be less than a second
-    assert!(
-        freq.as_millis() > 1000,
-        "Heart beat should never be less than a second"
-    );
+    assert!(freq.as_millis() > 1000, "Heart beat should never be less than a second");
 
     loop {
         sleep(freq - jitter()).await;
@@ -210,7 +273,6 @@ async fn use_writer(
                     error!("Failed to write heartbeat: {}", e);
                     break;
                 }
-
             }
             ClientMessage::Payload(payload) => {
                 if let Err(e) = writer.write_all(&payload.0).await {

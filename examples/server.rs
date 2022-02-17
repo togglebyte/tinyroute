@@ -1,7 +1,7 @@
 use std::fs::remove_file;
 
 use tinyroute::server::{Server, UdsConnections, TcpConnections};
-use tinyroute::{Agent, Message, Router, ToAddress, spawn, block_on};
+use tinyroute::{Agent, Message, Router, ToAddress};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Address {
@@ -35,7 +35,8 @@ async fn log(mut agent: Agent<(), Address>) {
     }
 }
 
-async fn run() {
+#[tokio::main]
+async fn main() {
     // Clean up possible stale socket
     let socket_path = "/tmp/example-server.sock";
     let _ = remove_file(socket_path);
@@ -52,7 +53,7 @@ async fn run() {
     let tcp_server = Server::new(tcp_listener, tcp_agent);
 
     // Start the Uds server
-    let uds_handle = spawn(async move { 
+    let uds_handle = tokio::spawn(async move { 
         let mut id = 0;
         uds_server.run(None, None, || {
             id += 1;
@@ -61,7 +62,7 @@ async fn run() {
     });
 
     // Start the Tcp server
-    let tcp_handle = spawn(async move {
+    let tcp_handle = tokio::spawn(async move {
         let mut id = 0;
         tcp_server.run(None, None, || {
             id += 1;
@@ -69,15 +70,11 @@ async fn run() {
         }).await.unwrap(); 
     });
 
-    let router_handle = spawn(router.run());
+    let router_handle = tokio::spawn(router.run());
 
     // Block on the log
     log(log_agent).await;
     let _ = router_handle.await;
     let _ = tcp_handle.await;
     let _ = uds_handle.await;
-}
-
-fn main() {
-    block_on(run());
 }

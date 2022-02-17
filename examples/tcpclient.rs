@@ -5,7 +5,6 @@ use std::env::args;
 
 use tinyroute::client::{connect, TcpClient, ClientMessage, ClientReceiver};
 use tinyroute::frame::{FramedMessage, Frame};
-use tinyroute::spawn;
 
 fn input() -> flume::Receiver<FramedMessage> {
     let (tx, rx) = flume::unbounded();
@@ -31,7 +30,7 @@ async fn run(rx: flume::Receiver<FramedMessage>, port: u16) {
     let client = TcpClient::connect(addr).await.unwrap();
     let (write_tx, read_rx) = connect(client, Some(Duration::from_secs(30)));
 
-    let _handle = spawn(output(read_rx));
+    let _handle = tokio::spawn(output(read_rx));
     #[cfg(feature="smol-rt")]
     _handle.detach();
 
@@ -50,14 +49,11 @@ async fn output(read_rx: ClientReceiver) -> Option<()> {
     }
 }
 
-async fn async_main() {
+#[tokio::main]
+async fn main() {
     pretty_env_logger::init();
 
     let port = args().skip(1).next().map(|s| s.parse::<u16>().ok()).flatten().unwrap_or(6789);
     let rx = input();
     run(rx, port).await;
-}
-
-fn main() {
-    tinyroute::block_on(async_main());
 }

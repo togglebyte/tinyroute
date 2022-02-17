@@ -5,7 +5,6 @@ use std::env::args;
 
 use tinyroute::client::{connect, UdsClient, ClientMessage};
 use tinyroute::frame::{FramedMessage, Frame};
-use tinyroute::spawn;
 
 fn input() -> flume::Receiver<FramedMessage> {
     let (tx, rx) = flume::unbounded();
@@ -30,7 +29,7 @@ async fn run(rx: flume::Receiver<FramedMessage>, addr: String) {
     let client = UdsClient::connect(addr).await.unwrap();
     let (write_tx, read_rx) = connect(client, Some(Duration::from_secs(30)));
 
-    let read_handle = spawn(output(read_rx));
+    let read_handle = tokio::spawn(output(read_rx));
 
     while let Ok(bytes) = rx.recv() {
         if let Err(_) = write_tx.send_async(ClientMessage::Payload(bytes)).await {

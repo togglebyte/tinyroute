@@ -8,7 +8,7 @@ use flume::{bounded, Receiver, Sender};
 use crate::agent::{Agent, AgentMsg, AnyMessage};
 use crate::errors::{Error, Result};
 use crate::server::ConnectionAddr;
-use crate::runtime::spawn;
+use tokio::spawn;
 
 // -----------------------------------------------------------------------------
 //     - Request -

@@ -5,7 +5,7 @@ use std::ops::Range;
 
 use bytes::{Bytes, BufMut, BytesMut};
 
-use crate::runtime::{AsyncRead, AsyncReadExt};
+use tokio::io::{AsyncRead, AsyncReadExt};
 use crate::errors::{Error, Result};
 
 const BUF_SIZE: usize = 1024;
@@ -81,7 +81,7 @@ impl Header {
 ///
 ///
 /// ```
-/// # use tinyroute::io::AsyncRead;
+/// # use tokio::io::AsyncRead;
 /// use tinyroute::frame::Frame;
 /// # async fn run(mut reader: impl AsyncRead + Unpin) {
 ///
