@@ -31,7 +31,7 @@ use std::time::Duration;
 use std::path::Path;
 
 use bytes::Bytes;
-use futures::future::FutureExt;
+// use futures::future::FutureExt;
 use log::error;
 
 use crate::ADDRESS_SEP;
@@ -217,9 +217,9 @@ impl<C: Connections, A: Sync + ToAddress> Server<C, A> {
         timeout: Option<Duration>,
         cap: Option<usize>,
     ) -> Result<Connection<A, <C as Connections>::Writer>> {
-        let (reader, writer, socket_addr) = futures::select! {
-            _ = self.server_agent.recv().fuse() => return Err(Error::ChannelClosed),
-            con = self.server.accept().fuse() => con?,
+        let (reader, writer, socket_addr) = tokio::select! {
+            _ = self.server_agent.recv() => return Err(Error::ChannelClosed),
+            con = self.server.accept() => con?,
         };
 
         let agent = self.server_agent.new_agent(cap, connection_address.clone()).await?;
@@ -234,9 +234,6 @@ impl<C: Connections, A: Sync + ToAddress> Server<C, A> {
                 timeout
             )
         ); 
-
-        #[cfg(feature = "smol-rt")]
-        _reader_handle.detach();
 
         Ok(Connection::new(agent, writer))
     }
@@ -364,9 +361,9 @@ async fn spawn_reader<A, R>(
 
         let restart = match timeout {
             Some(timeout) => {
-                futures::select! {
-                    _ = sleep(timeout).fuse() => false,
-                    restart = read.fuse() =>  restart ,
+                tokio::select! {
+                    _ = sleep(timeout) => false,
+                    restart = read =>  restart ,
                 }
             }
             None => read.await,

@@ -15,7 +15,7 @@ pub mod server;
 // -----------------------------------------------------------------------------
 pub use agent::{Agent, Message};
 pub use bytes::Bytes;
-pub use futures::{future::FutureExt, select};
+// pub use futures::{future::FutureExt, select};
 pub use router::{Router, RouterTx, ToAddress};
 
 pub mod channels {

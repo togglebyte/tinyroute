@@ -9,11 +9,10 @@ default = []
 [dependencies]
 bytes = "1.1.0"
 flume = "0.10.9"
-futures = "0.3.17"
 log = "0.4.14"
 rand = "0.8.4"
 thiserror = "1.0.29"
-tokio = { version = "1.11.0", features = ["net", "rt", "rt-multi-thread", "time", "io-util"] }
+tokio = { version = "1.11.0", features = ["net", "rt", "rt-multi-thread", "time", "io-util", "macros"] }
 
 [dev-dependencies]
 pretty_env_logger = "0.4.0"
