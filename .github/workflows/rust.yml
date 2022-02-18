@@ -16,9 +16,5 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: Run tests (tokio)
-      run: cargo test --verbose --features=tokio-rt
-    - name: Run tests (smol)
-      run: cargo test --verbose --features=smol-rt
-    - name: Run tests (async std)
-      run: cargo test --verbose --features=async-std-rt
+    - name: Run tests
+      run: cargo test --verbose
