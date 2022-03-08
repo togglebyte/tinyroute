@@ -324,6 +324,11 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
         msg.into_local_message()
     }
 
+    pub fn recv_sync(&mut self) -> Result<Message<T, A>> {
+        let msg = self.rx.recv().map_err(|_| Error::ChannelClosed)?;
+        msg.into_local_message()
+    }
+
     pub async fn send<U: Send + 'static>(
         &self,
         recipient: A,

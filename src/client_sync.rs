@@ -34,21 +34,18 @@
 //!     }
 //! }
 //! ```
+use std::net::{TcpStream, ToSocketAddrs};
+use std::os::unix::net::UnixStream;
 use std::path::Path;
+use std::thread;
 use std::time::Duration;
 
 use log::{error, info};
-use rand::prelude::*;
-use tokio::net::{TcpStream, UnixStream};
-
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
-use tokio::net::ToSocketAddrs;
-use tokio::spawn;
-use tokio::time::sleep;
 
 use crate::errors::{Error, Result};
 use crate::frame::{Frame, FrameOutput, FramedMessage};
 use crate::ADDRESS_SEP;
+use crate::client::jitter;
 
 /// Type alias for `tokio::mpsc::Receiver<Vec<u8>>`
 pub type ClientReceiver = flume::Receiver<Vec<u8>>;
@@ -57,6 +54,7 @@ pub type ClientSender = flume::Sender<ClientMessage>;
 
 /// Client message: a message sent by a client.
 /// The server will only ever see the payload bytes.
+// TODO: shared with async version
 #[derive(Debug)]
 pub enum ClientMessage {
     /// Shut down the client
@@ -100,12 +98,12 @@ impl ClientMessage {
 /// A client connection
 pub trait Client {
     /// The reading half of the connection
-    type Reader: AsyncRead + Unpin + Send + 'static;
+    type Reader: std::io::Read + Send + 'static;
     /// The writing half of the connection
-    type Writer: AsyncWrite + Unpin + Send + 'static;
+    type Writer: std::io::Write + Send + 'static;
 
     /// Split the connection into a reader / writer pair
-    fn split(self) -> (Self::Reader, Self::Writer);
+    fn split(self) -> Result<(Self::Reader, Self::Writer)>;
 }
 
 /// ```
@@ -120,23 +118,21 @@ pub struct UdsClient {
 
 impl UdsClient {
     /// Establish a tcp connection
-    pub async fn connect(addr: impl AsRef<Path>) -> Result<Self> {
-        let inner = UnixStream::connect(addr).await?;
-
+    pub fn connect(addr: impl AsRef<Path>) -> Result<Self> {
+        let inner = UnixStream::connect(addr)?;
         let inst = Self { inner };
-
         Ok(inst)
     }
 }
 
 impl Client for UdsClient {
-    type Reader = tokio::net::unix::OwnedReadHalf;
-    type Writer = tokio::net::unix::OwnedWriteHalf;
+    type Reader = UnixStream;
+    type Writer = UnixStream;
 
-    fn split(self) -> (Self::Reader, Self::Writer) {
-        let (reader, writer) = self.inner.into_split();
-
-        (reader, writer)
+    fn split(self) -> Result<(Self::Reader, Self::Writer)> {
+        let reader = self.inner;
+        let writer = reader.try_clone()?;
+        Ok((reader, writer))
     }
 }
 
@@ -152,50 +148,51 @@ pub struct TcpClient {
 
 impl TcpClient {
     /// Establish a tcp connection
-    pub async fn connect<A: ToSocketAddrs>(addr: A) -> Result<Self> {
-        let inner = TcpStream::connect(addr).await?;
-
+    pub fn connect<A: ToSocketAddrs>(addr: A) -> Result<Self> {
+        let inner = TcpStream::connect(addr)?;
         let inst = Self { inner };
-
         Ok(inst)
     }
 }
 
 impl Client for TcpClient {
-    type Reader = tokio::net::tcp::OwnedReadHalf;
-    type Writer = tokio::net::tcp::OwnedWriteHalf;
+    type Reader = std::net::TcpStream;
+    type Writer = std::net::TcpStream;
 
-    fn split(self) -> (Self::Reader, Self::Writer) {
-        let (reader, writer) = self.inner.into_split();
+    fn split(self) -> Result<(Self::Reader, Self::Writer)> {
+        let reader = self.inner;
+        let writer = reader.try_clone()?;
 
-        (reader, writer)
+        Ok((reader, writer))
     }
 }
 
 /// Get a [`ClientSender`] and [`ClientReceiver`] pair
-pub fn connect(connection: impl Client, heartbeat: Option<Duration>) -> (ClientSender, ClientReceiver) {
+pub fn connect(connection: impl Client, heartbeat: Option<Duration>) -> Result<(ClientSender, ClientReceiver)> {
     let (writer_tx, writer_rx) = flume::unbounded();
     let (reader_tx, reader_rx) = flume::unbounded();
 
-    let (reader, writer) = connection.split();
+    let (reader, writer) = connection.split()?;
 
-    let _read_handle = spawn(use_reader(reader, reader_tx, writer_tx.clone()));
-    let _write_handle = spawn(use_writer(writer, writer_rx));
+    let writer_tx_clone = writer_tx.clone();
+    let _read_handle = thread::spawn(move || use_reader(reader, reader_tx, writer_tx_clone));
+    let _write_handle = thread::spawn(move || use_writer(writer, writer_rx));
 
     if let Some(freq) = heartbeat {
-        let _beat_handle = spawn(run_heartbeat(freq, writer_tx.clone()));
+        let writer_tx_clone = writer_tx.clone();
+        let _beat_handle = thread::spawn(move || run_heartbeat(freq, writer_tx_clone));
     }
 
-    (writer_tx, reader_rx)
+    Ok((writer_tx, reader_rx))
 }
 
-pub async fn run_heartbeat(freq: Duration, writer_tx: flume::Sender<ClientMessage>) {
+pub fn run_heartbeat(freq: Duration, writer_tx: flume::Sender<ClientMessage>) {
     info!("Start beat");
     // Heart beat should never be less than a second
     assert!(freq.as_millis() > 1000, "Heart beat should never be less than a second");
 
     loop {
-        sleep(freq - jitter()).await;
+        thread::sleep(freq - jitter());
         if let Err(e) = writer_tx.send(ClientMessage::Heartbeat) {
             error!("Failed to send heartbeat to writer: {}", e);
             break;
@@ -203,22 +200,15 @@ pub async fn run_heartbeat(freq: Duration, writer_tx: flume::Sender<ClientMessag
     }
 }
 
-pub(crate) fn jitter() -> Duration {
-    let min_ms = 100;
-    let max_ms = 2_000;
-    let ms = thread_rng().gen_range(min_ms..max_ms);
-    Duration::from_millis(ms)
-}
-
-async fn use_reader(
-    mut reader: impl AsyncRead + Unpin + Send + 'static,
+fn use_reader(
+    mut reader: impl std::io::Read + Send + 'static,
     output_tx: flume::Sender<Vec<u8>>,
     writer_tx: flume::Sender<ClientMessage>,
 ) {
     let mut frame = Frame::empty();
 
     'read: loop {
-        let res = frame.read_async(&mut reader).await;
+        let res = frame.read(&mut reader);
 
         'msg: loop {
             match res {
@@ -227,7 +217,7 @@ async fn use_reader(
                     Ok(None) => break 'msg,
                     Ok(Some(FrameOutput::Heartbeat)) => error!("received a heartbeat on the reader"),
                     Ok(Some(FrameOutput::Message(payload))) => {
-                        if let Err(e) = output_tx.send_async(payload).await {
+                        if let Err(e) = output_tx.send(payload) {
                             error!("Failed to send client message: {}", e);
                         }
                     }
@@ -249,23 +239,20 @@ async fn use_reader(
     info!("Client closed (reader)");
 }
 
-async fn use_writer(
-    mut writer: impl AsyncWrite + Unpin + Send + 'static,
-    rx: flume::Receiver<ClientMessage>,
-) -> Result<()> {
+fn use_writer(mut writer: impl std::io::Write + Send + 'static, rx: flume::Receiver<ClientMessage>) -> Result<()> {
     loop {
-        let msg = rx.recv_async().await.map_err(|_| Error::ChannelClosed)?;
+        let msg = rx.recv().map_err(|_| Error::ChannelClosed)?;
         match msg {
             ClientMessage::Quit => break,
             ClientMessage::Heartbeat => {
                 let beat = &[crate::frame::Header::Heartbeat as u8];
-                if let Err(e) = writer.write_all(beat).await {
+                if let Err(e) = writer.write_all(beat) {
                     error!("Failed to write heartbeat: {}", e);
                     break;
                 }
             }
             ClientMessage::Payload(payload) => {
-                if let Err(e) = writer.write_all(&payload.0).await {
+                if let Err(e) = writer.write_all(&payload.0) {
                     error!("Failed to write payload: {}", e);
                     break;
                 }

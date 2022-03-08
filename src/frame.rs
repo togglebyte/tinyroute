@@ -116,6 +116,17 @@ impl Frame {
     pub async fn read_async<T: AsyncRead + Unpin>(&mut self, reader: &mut T) -> Result<usize> {
         let slice = self.available_slice_mut();
         let bytes_read = reader.read(slice).await?;
+        self.inner_read(bytes_read)
+    }
+
+    /// Sync read
+    pub fn read<T: std::io::Read>(&mut self, reader: &mut T) -> Result<usize> {
+        let slice = self.available_slice_mut();
+        let bytes_read = reader.read(slice)?;
+        self.inner_read(bytes_read)
+    }
+
+    fn inner_read(&mut self, bytes_read: usize) -> Result<usize> {
         if bytes_read == 0 {
             return Ok(0);
         }
@@ -127,7 +138,7 @@ impl Frame {
 
         Ok(bytes_read)
     }
-
+    
     pub fn extend(&mut self, bytes: &[u8]) -> usize {
         // As long as there is room in the buffer, keep extending the slice
         // until either:
