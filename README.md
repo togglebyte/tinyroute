@@ -1,7 +1,5 @@
 # TinyRoute
 
-A runtime agnostic network library written in Rust.
-
 Currently supported run time is Tokio.
 
 **This is not production ready!**
