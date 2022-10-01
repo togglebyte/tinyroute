@@ -250,7 +250,7 @@ impl<C: Connections, A: Sync + ToAddress> Server<C, A> {
         where F: FnMut() -> A
     {
         while let Ok(mut connection) = self.next((f)(), timeout, cap).await {
-            let server_handle = spawn(async move {
+            spawn(async move {
                 loop {
                     match connection.recv().await {
                         Ok(Some(Message::Shutdown)) => break,
@@ -262,11 +262,6 @@ impl<C: Connections, A: Sync + ToAddress> Server<C, A> {
                     }
                 }
             });
-
-            #[cfg(feature = "smol-rt")]
-            server_handle.detach();
-            #[cfg(not(feature = "smol-rt"))]
-            let _ = server_handle;
         }
         Ok(())
     }

@@ -30,9 +30,7 @@ async fn run(rx: flume::Receiver<FramedMessage>, port: u16) {
     let client = TcpClient::connect(addr).await.unwrap();
     let (write_tx, read_rx) = connect(client, Some(Duration::from_secs(30)));
 
-    let _handle = tokio::spawn(output(read_rx));
-    #[cfg(feature="smol-rt")]
-    _handle.detach();
+    tokio::spawn(output(read_rx));
 
     while let Ok(bytes) = rx.recv() {
         if let Err(_) = write_tx.send(ClientMessage::Payload(bytes)) {

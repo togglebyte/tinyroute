@@ -238,13 +238,9 @@ impl<A: ToAddress + Clone> Router<A> {
                 RouterMessage::ShutdownRouter => {
                     let drain = self.channels.drain().map(|(_, tx)| tx);
                     for tx in drain {
-                        let handle = spawn(async move {
+                        spawn(async move {
                             let _ = tx.send_async(AgentMsg::Shutdown).await;
                         });
-                        #[cfg(feature="smol-rt")]
-                        handle.detach();
-                        #[cfg(not(feature="smol-rt"))]
-                        let _ = handle;
                     }
 
                     info!("Shutting down router");
