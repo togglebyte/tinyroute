@@ -99,7 +99,7 @@ use bytes::Bytes;
 use crate::bridge::BridgeMessageOut;
 use crate::errors::{Error, Result};
 use crate::frame::Frame;
-use crate::router::{RouterMessage, RouterTx, ToAddress, Request};
+use crate::router::{Request, RouterMessage, RouterTx, ToAddress};
 use crate::server::ConnectionAddr;
 
 // -----------------------------------------------------------------------------
@@ -156,9 +156,7 @@ impl<T: Display + 'static, A: ToAddress> Display for Message<T, A> {
             Self::Value(val, sender) => {
                 write!(f, "{} > Value<{}>", sender.to_string(), val)
             }
-            Self::Fetch(_) => {
-                write!(f, "<Fetch>")
-            }
+            Self::Fetch(_) => write!(f, "<Fetch>"),
             Self::RemoteMessage { bytes, sender, host } => write!(
                 f,
                 "{}@{} > Bytes({})",
@@ -262,7 +260,7 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
     /// # pub enum Address {
     /// #     NewAgent,
     /// # }
-    /// # 
+    /// #
     /// # impl ToAddress for Address {
     /// #     fn from_bytes(bytes: &[u8]) -> Option<Address> {
     /// #         match bytes {
@@ -283,7 +281,8 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
             Some(cap) => flume::bounded(cap),
             None => flume::unbounded(),
         };
-        let agent = Agent::new(self.router_tx.clone(), address.clone(), transport_rx);
+        let agent =
+            Agent::new(self.router_tx.clone(), address.clone(), transport_rx);
         self.router_tx.register_agent(address, transport_tx).await?;
         Ok(agent)
     }
@@ -296,10 +295,12 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
     /// If the address is unregistered, the tracking agent will
     /// receive a `Message::AgentRemoved(tracked_address)`.
     pub async fn track(&self, address: A) -> Result<()> {
-        self.router_tx.send(RouterMessage::Track {
-            from: self.address.clone(),
-            to: address,
-        }).await?;
+        self.router_tx
+            .send(RouterMessage::Track {
+                from: self.address.clone(),
+                to: address,
+            })
+            .await?;
         Ok(())
     }
 
@@ -307,10 +308,12 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
     /// If this agents address is unregistered, the tracking agent will
     /// receive a `Message::AgentRemoved(tracked_address)`.
     pub async fn reverse_track(&self, address: A) -> Result<()> {
-        self.router_tx.send(RouterMessage::Track {
-            from: address,
-            to: self.address.clone(),
-        }).await?;
+        self.router_tx
+            .send(RouterMessage::Track {
+                from: address,
+                to: self.address.clone(),
+            })
+            .await?;
         Ok(())
     }
 
@@ -320,7 +323,8 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
     }
 
     pub async fn recv(&mut self) -> Result<Message<T, A>> {
-        let msg = self.rx.recv_async().await.map_err(|_| Error::ChannelClosed)?;
+        let msg =
+            self.rx.recv_async().await.map_err(|_| Error::ChannelClosed)?;
         msg.into_local_message()
     }
 
@@ -343,7 +347,11 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
         Ok(())
     }
 
-    pub async fn send_remote(&self, recipients: impl IntoIterator<Item=A>, message: &[u8]) -> Result<()> {
+    pub async fn send_remote(
+        &self,
+        recipients: impl IntoIterator<Item = A>,
+        message: &[u8],
+    ) -> Result<()> {
         let framed_message = Frame::frame_message(message);
 
         for recipient in recipients.into_iter() {

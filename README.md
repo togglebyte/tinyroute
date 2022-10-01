@@ -1,10 +1,14 @@
 # TinyRoute
 
-Currently supported run time is Tokio.
+A message routing library.
 
-**This is not production ready!**
+**Note** this is a work in progress!
 
-TODO: 
-* Try it with https://docs.rs/tokio-console/latest/tokio_console/
-* Add Rustls support (and optionally webpki_roots as a feature)
+## What is all this then?
 
+Working with multiple channels can easily lead to complex code and tracking all
+the `Sender`s and `Receiver`s becomes more difficult.
+
+Instead of passing `Sender`s and `Receiver`s around, messages can be sent to
+`Agent`s via `Address`es.
+This means it's not necessary to create another `mpsc` pair to communicate.

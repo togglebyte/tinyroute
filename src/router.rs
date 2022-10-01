@@ -105,11 +105,7 @@ impl<A: ToAddress> RouterTx<A> {
     pub async fn fetch<T: Send + 'static, R: Send + 'static>(&self, address: A, request: Option<R>) -> Result<Response<T>> {
         let (tx, rx) = bounded(0);
 
-        let request = match request {
-            Some(r) => Some(AnyMessage::new(r)),
-            None => None,
-        };
-
+        let request = request.map(|r| AnyMessage::new(r));
         let request = Request { tx, data: request };
         match self.0.send_async(RouterMessage::Fetch(address, request)).await {
             Ok(()) => Ok(Response { rx, _p: PhantomData }),
