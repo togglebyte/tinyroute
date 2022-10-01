@@ -46,8 +46,7 @@ use crate::errors::{Error, Result};
 use crate::frame::{Frame, FrameOutput, FramedMessage};
 use crate::ADDRESS_SEP;
 use crate::client::jitter;
-use flume::Receiver;
-use flume::Sender;
+use flume::{Receiver, Sender};
 
 /// Type alias for `tokio::mpsc::Receiver<Vec<u8>>`
 pub type ClientReceiver = Receiver<Vec<u8>>;
