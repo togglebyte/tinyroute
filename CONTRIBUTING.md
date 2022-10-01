@@ -35,3 +35,6 @@ that are not aligned to this Code of Conduct.
 Maintainers have the right to ban temporarily or permanently any contributor for
 other behaviours that they deem to be inappropriate, threatening, offensive, or harmful.
 
+## Attribution
+
+This was based of https://gist.github.com/PurpleBooth/b24679402957c63ec426
