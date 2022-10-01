@@ -2,11 +2,12 @@ use std::io::{stdin, Result};
 use std::time::Duration;
 use std::thread;
 use std::env::args;
+use flume::Receiver;
 
 use tinyroute::client::{connect, TcpClient, ClientMessage, ClientReceiver};
 use tinyroute::frame::{FramedMessage, Frame};
 
-fn input() -> flume::Receiver<FramedMessage> {
+fn input() -> Receiver<FramedMessage> {
     let (tx, rx) = flume::unbounded();
 
     thread::spawn(move || -> Result<()> {
@@ -25,7 +26,7 @@ fn input() -> flume::Receiver<FramedMessage> {
     rx
 }
 
-async fn run(rx: flume::Receiver<FramedMessage>, port: u16) {
+async fn run(rx: Receiver<FramedMessage>, port: u16) {
     let addr = format!("127.0.0.1:{}", port);
     let client = TcpClient::connect(addr).await.unwrap();
     let (write_tx, read_rx) = connect(client, Some(Duration::from_secs(30)));

@@ -49,11 +49,13 @@ use tokio::time::sleep;
 use crate::errors::{Error, Result};
 use crate::frame::{Frame, FrameOutput, FramedMessage};
 use crate::ADDRESS_SEP;
+use flume::Receiver;
+use flume::Sender;
 
 /// Type alias for `tokio::mpsc::Receiver<Vec<u8>>`
-pub type ClientReceiver = flume::Receiver<Vec<u8>>;
+pub type ClientReceiver = Receiver<Vec<u8>>;
 /// Type alias for `tokio::mpsc::Sender<ClientMessage>`
-pub type ClientSender = flume::Sender<ClientMessage>;
+pub type ClientSender = Sender<ClientMessage>;
 
 /// Client message: a message sent by a client.
 /// The server will only ever see the payload bytes.
@@ -189,7 +191,7 @@ pub fn connect(connection: impl Client, heartbeat: Option<Duration>) -> (ClientS
     (writer_tx, reader_rx)
 }
 
-pub async fn run_heartbeat(freq: Duration, writer_tx: flume::Sender<ClientMessage>) {
+pub async fn run_heartbeat(freq: Duration, writer_tx: Sender<ClientMessage>) {
     info!("Start beat");
     // Heart beat should never be less than a second
     assert!(freq.as_millis() > 1000, "Heart beat should never be less than a second");
@@ -212,8 +214,8 @@ pub(crate) fn jitter() -> Duration {
 
 async fn use_reader(
     mut reader: impl AsyncRead + Unpin + Send + 'static,
-    output_tx: flume::Sender<Vec<u8>>,
-    writer_tx: flume::Sender<ClientMessage>,
+    output_tx: Sender<Vec<u8>>,
+    writer_tx: Sender<ClientMessage>,
 ) {
     let mut frame = Frame::empty();
 
@@ -251,7 +253,7 @@ async fn use_reader(
 
 async fn use_writer(
     mut writer: impl AsyncWrite + Unpin + Send + 'static,
-    rx: flume::Receiver<ClientMessage>,
+    rx: Receiver<ClientMessage>,
 ) -> Result<()> {
     loop {
         let msg = rx.recv_async().await.map_err(|_| Error::ChannelClosed)?;

@@ -101,6 +101,7 @@ use crate::errors::{Error, Result};
 use crate::frame::Frame;
 use crate::router::{Request, RouterMessage, RouterTx, ToAddress};
 use crate::server::ConnectionAddr;
+use flume::Receiver;
 
 // -----------------------------------------------------------------------------
 //     - Any message -
@@ -231,7 +232,7 @@ impl<A: ToAddress> AgentMsg<A> {
 pub struct Agent<T, A: ToAddress> {
     pub(crate) router_tx: RouterTx<A>,
     pub(crate) address: A,
-    rx: flume::Receiver<AgentMsg<A>>,
+    rx: Receiver<AgentMsg<A>>,
     _p: PhantomData<T>,
 }
 
@@ -247,7 +248,7 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
     pub(crate) fn new(
         router_tx: RouterTx<A>,
         address: A,
-        rx: flume::Receiver<AgentMsg<A>>,
+        rx: Receiver<AgentMsg<A>>,
     ) -> Self {
         Self { router_tx, rx, address, _p: PhantomData }
     }

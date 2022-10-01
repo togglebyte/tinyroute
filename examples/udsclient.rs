@@ -2,11 +2,12 @@ use std::io::{stdin, Result};
 use std::time::Duration;
 use std::thread;
 use std::env::args;
+use flume::Receiver;
 
 use tinyroute::client::{connect, UdsClient, ClientMessage};
 use tinyroute::frame::{FramedMessage, Frame};
 
-fn input() -> flume::Receiver<FramedMessage> {
+fn input() -> Receiver<FramedMessage> {
     let (tx, rx) = flume::unbounded();
 
     thread::spawn(move || -> Result<()> {
@@ -25,7 +26,7 @@ fn input() -> flume::Receiver<FramedMessage> {
     rx
 }
 
-async fn run(rx: flume::Receiver<FramedMessage>, addr: String) {
+async fn run(rx: Receiver<FramedMessage>, addr: String) {
     let client = UdsClient::connect(addr).await.unwrap();
     let (write_tx, read_rx) = connect(client, Some(Duration::from_secs(30)));
 
@@ -40,7 +41,7 @@ async fn run(rx: flume::Receiver<FramedMessage>, addr: String) {
     let _ = read_handle.await;
 }
 
-async fn output(read_rx: flume::Receiver<Vec<u8>>) -> Option<()> {
+async fn output(read_rx: Receiver<Vec<u8>>) -> Option<()> {
     loop {
         let payload = read_rx.recv_async().await.ok()?;
         let data = String::from_utf8(payload).ok()?;
