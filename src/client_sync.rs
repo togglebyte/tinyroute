@@ -46,11 +46,12 @@ use crate::errors::{Error, Result};
 use crate::frame::{Frame, FrameOutput, FramedMessage};
 use crate::ADDRESS_SEP;
 use crate::client::jitter;
+use flume::{Receiver, Sender};
 
 /// Type alias for `tokio::mpsc::Receiver<Vec<u8>>`
-pub type ClientReceiver = flume::Receiver<Vec<u8>>;
+pub type ClientReceiver = Receiver<Vec<u8>>;
 /// Type alias for `tokio::mpsc::Sender<ClientMessage>`
-pub type ClientSender = flume::Sender<ClientMessage>;
+pub type ClientSender = Sender<ClientMessage>;
 
 /// Client message: a message sent by a client.
 /// The server will only ever see the payload bytes.
@@ -186,7 +187,7 @@ pub fn connect(connection: impl Client, heartbeat: Option<Duration>) -> Result<(
     Ok((writer_tx, reader_rx))
 }
 
-pub fn run_heartbeat(freq: Duration, writer_tx: flume::Sender<ClientMessage>) {
+pub fn run_heartbeat(freq: Duration, writer_tx: Sender<ClientMessage>) {
     info!("Start beat");
     // Heart beat should never be less than a second
     assert!(freq.as_millis() > 1000, "Heart beat should never be less than a second");
@@ -202,8 +203,8 @@ pub fn run_heartbeat(freq: Duration, writer_tx: flume::Sender<ClientMessage>) {
 
 fn use_reader(
     mut reader: impl std::io::Read + Send + 'static,
-    output_tx: flume::Sender<Vec<u8>>,
-    writer_tx: flume::Sender<ClientMessage>,
+    output_tx: Sender<Vec<u8>>,
+    writer_tx: Sender<ClientMessage>,
 ) {
     let mut frame = Frame::empty();
 
@@ -239,7 +240,7 @@ fn use_reader(
     info!("Client closed (reader)");
 }
 
-fn use_writer(mut writer: impl std::io::Write + Send + 'static, rx: flume::Receiver<ClientMessage>) -> Result<()> {
+fn use_writer(mut writer: impl std::io::Write + Send + 'static, rx: Receiver<ClientMessage>) -> Result<()> {
     loop {
         let msg = rx.recv().map_err(|_| Error::ChannelClosed)?;
         match msg {

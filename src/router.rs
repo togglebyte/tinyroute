@@ -73,10 +73,10 @@ impl<T: Send + 'static> Response<T> {
 //     - Router TX -
 // -----------------------------------------------------------------------------
 #[derive(Clone)]
-pub struct RouterTx<A: ToAddress>(pub(crate) flume::Sender<RouterMessage<A>>);
+pub struct RouterTx<A: ToAddress>(pub(crate) Sender<RouterMessage<A>>);
 
 impl<A: ToAddress> RouterTx<A> {
-    pub(crate) async fn register_agent(&self, address: A, tx: flume::Sender<AgentMsg<A>>) -> Result<()> {
+    pub(crate) async fn register_agent(&self, address: A, tx: Sender<AgentMsg<A>>) -> Result<()> {
         let (success_tx, success_rx) = bounded(0);
         self.0.send_async(RouterMessage::Register(address, tx, success_tx)).await.map_err(|_| Error::RegisterAgentFailed)?;
         success_rx.recv_async().await.map_err(|_| Error::RegisterAgentFailed)?;
@@ -134,7 +134,7 @@ pub(crate) enum RouterMessage<A: ToAddress> {
     // The only thing that should be sending these remote messages
     // are the reader halves of a socket!
     RemoteMessage { recipient: A, sender: A, bytes: Bytes, host: ConnectionAddr },
-    Register(A, flume::Sender<AgentMsg<A>>, flume::Sender<()>),
+    Register(A, Sender<AgentMsg<A>>, Sender<()>),
     Track { from: A, to: A },
     Unregister(A),
     Shutdown(A),
@@ -179,9 +179,9 @@ pub(crate) enum RouterMessage<A: ToAddress> {
 /// # }
 /// ```
 pub struct Router<A: ToAddress> {
-    rx: flume::Receiver<RouterMessage<A>>,
-    tx: flume::Sender<RouterMessage<A>>,
-    channels: FxHashMap<A, flume::Sender<AgentMsg<A>>>,
+    rx: Receiver<RouterMessage<A>>,
+    tx: Sender<RouterMessage<A>>,
+    channels: FxHashMap<A, Sender<AgentMsg<A>>>,
     subscriptions: FxHashMap<A, Vec<A>>,
 }
 
