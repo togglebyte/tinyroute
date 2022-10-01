@@ -1,9 +1,9 @@
 use std::marker::PhantomData;
-use std::collections::HashMap;
 
 use bytes::Bytes;
 use log::{error, info, warn};
 use flume::{bounded, Receiver, Sender};
+use fxhash::FxHashMap;
 
 use crate::agent::{Agent, AgentMsg, AnyMessage};
 use crate::errors::{Error, Result};
@@ -181,14 +181,14 @@ pub(crate) enum RouterMessage<A: ToAddress> {
 pub struct Router<A: ToAddress> {
     rx: flume::Receiver<RouterMessage<A>>,
     tx: flume::Sender<RouterMessage<A>>,
-    channels: HashMap<A, flume::Sender<AgentMsg<A>>>,
-    subscriptions: HashMap<A, Vec<A>>,
+    channels: FxHashMap<A, flume::Sender<AgentMsg<A>>>,
+    subscriptions: FxHashMap<A, Vec<A>>,
 }
 
 impl<A: ToAddress + Clone> Router<A> {
     pub fn new() -> Self {
         let (tx, rx) = flume::unbounded();
-        Self { tx, rx, channels: HashMap::new(), subscriptions: HashMap::new() }
+        Self { tx, rx, channels: FxHashMap::default(), subscriptions: FxHashMap::default() }
     }
 
     pub fn new_agent<T: Send + 'static>(&mut self, cap: Option<usize>, address: A) -> Result<Agent<T, A>> {
