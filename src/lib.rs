@@ -1,7 +1,6 @@
 pub const ADDRESS_SEP: u8 = b'|';
 
 mod router;
-mod runtime;
 
 pub mod agent;
 pub mod bridge;
