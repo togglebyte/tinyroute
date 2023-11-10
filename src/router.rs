@@ -292,7 +292,7 @@ impl<A: ToAddress + Clone> Router<A> {
                     }
                 }
                 RouterMessage::Track { from, to } => {
-                    let tracked = self.subscriptions.entry(to).or_insert_with(Vec::new);
+                    let tracked = self.subscriptions.entry(to).or_default();
 
                     if tracked.contains(&from) {
                         continue;

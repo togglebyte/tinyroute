@@ -116,6 +116,67 @@ impl Connections for TcpConnections {
     }
 }
 
+#[cfg(feature = "tls")]
+pub mod tls {
+    use std::sync::Arc;
+
+    use tokio::io::{ReadHalf, WriteHalf};
+    use tokio::net::{TcpListener, TcpStream};
+    use tokio_rustls::rustls::ServerConfig;
+    pub use tokio_rustls::rustls::{Certificate, PrivateKey};
+    use tokio_rustls::server::TlsStream;
+    use tokio_rustls::TlsAcceptor;
+
+    use super::{ConnectionAddr, Connections};
+    use crate::errors::{Result, TlsError};
+
+    pub struct TlsConnections {
+        acceptor: TlsAcceptor,
+        inner: TcpListener,
+    }
+
+    impl TlsConnections {
+        pub fn new(
+            inner: TcpListener,
+            cert_chain: Vec<Certificate>,
+            key: PrivateKey,
+        ) -> Result<Self> {
+            Ok(Self::new_with_config(
+                inner,
+                Arc::new(
+                    ServerConfig::builder()
+                        .with_safe_defaults()
+                        .with_no_client_auth()
+                        .with_single_cert(cert_chain, key)
+                        .map_err(TlsError::from)?,
+                ),
+            ))
+        }
+
+        pub fn new_with_config(inner: TcpListener, config: Arc<ServerConfig>) -> Self {
+            Self {
+                acceptor: config.into(),
+                inner,
+            }
+        }
+    }
+
+    impl Connections for TlsConnections {
+        type Reader = ReadHalf<TlsStream<TcpStream>>;
+        type Writer = WriteHalf<TlsStream<TcpStream>>;
+
+        fn accept(&mut self) -> super::ServerFuture<'_, Self::Reader, Self::Writer> {
+            Box::pin(async move {
+                let (stream, peer_addr) = self.inner.accept().await?;
+                let stream = self.acceptor.accept(stream).await.unwrap();
+                let (reader, writer) = tokio::io::split(stream);
+
+                Ok((reader, writer, ConnectionAddr::Tcp(peer_addr)))
+            })
+        }
+    }
+}
+
 /// Client payload.
 /// Access the bytes through `self.data()`
 #[derive(Debug, Clone)]
@@ -406,7 +467,7 @@ where
 }
 
 // -----------------------------------------------------------------------------
-//     - Connection adddress -
+//     - Connection address -
 // -----------------------------------------------------------------------------
 #[derive(Debug, Clone)]
 pub enum ConnectionAddr {

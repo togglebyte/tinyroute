@@ -4,6 +4,7 @@ use std::thread;
 use std::time::Duration;
 
 use flume::Receiver;
+use log::debug;
 use tinyroute::client::{connect, ClientMessage, ClientReceiver, TcpClient};
 use tinyroute::frame::{Frame, FramedMessage};
 
@@ -15,10 +16,16 @@ fn input() -> Receiver<FramedMessage> {
         let stdin = stdin();
 
         loop {
-            stdin.read_line(&mut buffer)?;
-            let mut line = buffer.drain(..).collect::<String>();
-            line.pop();
-            let framed_msg = Frame::frame_message(line.as_bytes());
+            buffer.clear();
+
+            if let Err(e) = stdin.read_line(&mut buffer) {
+                debug!("shutdown input");
+                return Err(e);
+            }
+
+            buffer.pop();
+            debug!("sending message: {buffer}");
+            let framed_msg = Frame::frame_message(buffer.as_bytes());
             let _ = tx.send(framed_msg);
         }
     });
@@ -34,7 +41,11 @@ async fn run(rx: Receiver<FramedMessage>, port: u16) {
     tokio::spawn(output(read_rx));
 
     while let Ok(bytes) = rx.recv() {
-        if let Err(_) = write_tx.send(ClientMessage::Payload(bytes)) {
+        if write_tx
+            .send_async(ClientMessage::Payload(bytes))
+            .await
+            .is_err()
+        {
             break;
         }
     }
@@ -53,10 +64,8 @@ async fn main() {
     pretty_env_logger::init();
 
     let port = args()
-        .skip(1)
-        .next()
-        .map(|s| s.parse::<u16>().ok())
-        .flatten()
+        .nth(1)
+        .and_then(|s| s.parse::<u16>().ok())
         .unwrap_or(6789);
     let rx = input();
     run(rx, port).await;

@@ -1,12 +1,15 @@
 use std::env::args;
-use std::io::{stdin, Result};
-use std::thread;
+use std::io::{stdin, Cursor, Result};
 use std::time::Duration;
+use std::{fs, thread};
 
 use flume::Receiver;
 use log::debug;
-use tinyroute::client::{connect, ClientMessage, UdsClient};
+use tinyroute::client::tls::{Certificate, TlsClientBuilder};
+use tinyroute::client::{connect, ClientMessage, ClientReceiver, TcpClient};
 use tinyroute::frame::{Frame, FramedMessage};
+
+const CERT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/localhost-cert.pem");
 
 fn input() -> Receiver<FramedMessage> {
     let (tx, rx) = flume::unbounded();
@@ -33,11 +36,21 @@ fn input() -> Receiver<FramedMessage> {
     rx
 }
 
-async fn run(rx: Receiver<FramedMessage>, addr: String) {
-    let client = UdsClient::connect(addr).await.unwrap();
+async fn run(rx: Receiver<FramedMessage>, port: u16) {
+    let addr = format!("127.0.0.1:{}", port);
+    let client = TcpClient::connect(addr).await.unwrap();
+    let client = TlsClientBuilder::new()
+        .with_cert(Certificate(
+            rustls_pemfile::certs(&mut Cursor::new(fs::read(CERT_PATH).unwrap()))
+                .unwrap()
+                .remove(0),
+        ))
+        .build(client, "localhost")
+        .await
+        .unwrap();
     let (write_tx, read_rx) = connect(client, Some(Duration::from_secs(30)));
 
-    let read_handle = tokio::spawn(output(read_rx));
+    tokio::spawn(output(read_rx));
 
     while let Ok(bytes) = rx.recv() {
         if write_tx
@@ -48,11 +61,9 @@ async fn run(rx: Receiver<FramedMessage>, addr: String) {
             break;
         }
     }
-
-    let _ = read_handle.await;
 }
 
-async fn output(read_rx: Receiver<Vec<u8>>) -> Option<()> {
+async fn output(read_rx: ClientReceiver) -> Option<()> {
     loop {
         let payload = read_rx.recv_async().await.ok()?;
         let data = String::from_utf8(payload).ok()?;
@@ -64,7 +75,10 @@ async fn output(read_rx: Receiver<Vec<u8>>) -> Option<()> {
 async fn main() {
     pretty_env_logger::init();
 
-    let addr = args().nth(1).expect("provide an address");
+    let port = args()
+        .nth(1)
+        .and_then(|s| s.parse::<u16>().ok())
+        .unwrap_or(6790);
     let rx = input();
-    run(rx, addr).await;
+    run(rx, port).await;
 }
