@@ -4,6 +4,7 @@ use crate::ToAddress;
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum Error {
     #[error("Io error")]
     Io(#[from] std::io::Error),
@@ -43,10 +44,23 @@ pub enum Error {
 
     #[error("Bridgemalarkey")]
     Bridge(#[from] crate::bridge::BridgeError),
+
+    #[cfg(feature = "tls")]
+    #[error(transparent)]
+    Tls(#[from] TlsError),
 }
 
 impl<A: ToAddress> From<flume::SendError<AgentMsg<A>>> for Error {
     fn from(_: flume::SendError<AgentMsg<A>>) -> Self {
         Self::ChannelClosed
     }
+}
+
+#[cfg(feature = "tls")]
+#[derive(thiserror::Error, Debug)]
+pub enum TlsError {
+    #[error("The provided domain name appears to be invalid")]
+    InvalidDnsName(#[from] tokio_rustls::rustls::client::InvalidDnsNameError),
+    #[error("Failed due to a TLS related issue")]
+    Rustls(#[from] tokio_rustls::rustls::Error),
 }

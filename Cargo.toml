@@ -5,6 +5,9 @@ edition = "2021"
 
 [features]
 default = []
+tls = ["dep:tokio-rustls", "dep:rustls-pemfile"]
+tls-native-certs = ["tls", "dep:rustls-native-certs"]
+tls-webpki-roots = ["tls", "dep:webpki-roots"]
 
 [dependencies]
 bytes = "1.5.0"
@@ -12,9 +15,22 @@ flume = "0.11.0"
 fxhash = "0.2.1"
 log = "0.4.20"
 rand = "0.8.5"
+rustls-native-certs = { version = "0.6.3", optional = true }
+rustls-pemfile = { version = "1.0.4", optional = true }
 thiserror = "1.0.50"
 tokio = { version = "1.11.0", features = ["net", "rt", "rt-multi-thread", "time", "io-util", "macros" ] }
+tokio-rustls = { version= "0.24.1", optional = true }
+webpki-roots = { version= " 0.25.2", optional = true }
 
 [dev-dependencies]
 pretty_env_logger = "0.4.0"
+rcgen = "0.11.3"
 tokio = { version = "1.11.0", features = ["full"] }
+
+[[example]]
+name = "server"
+required-features = ["tls"]
+
+[[example]]
+name = "tlsclient"
+required-features = ["tls"]

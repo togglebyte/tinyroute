@@ -174,6 +174,140 @@ impl Client for TcpClient {
     }
 }
 
+#[cfg(feature = "tls")]
+pub mod tls {
+    use std::sync::Arc;
+
+    use tokio::io::{self, ReadHalf, WriteHalf};
+    use tokio::net::TcpStream;
+    use tokio_rustls::client::TlsStream;
+    pub use tokio_rustls::rustls::{Certificate, ClientConfig};
+    use tokio_rustls::rustls::{RootCertStore, ServerName};
+    use tokio_rustls::TlsConnector;
+
+    use super::{Client, TcpClient};
+    use crate::errors::{Result, TlsError};
+
+    pub struct TlsClient {
+        inner: TlsStream<TcpStream>,
+    }
+
+    impl TlsClient {
+        async fn new(store: RootCertStore, client: TcpClient, domain: &str) -> Result<Self> {
+            let config = ClientConfig::builder()
+                .with_safe_defaults()
+                .with_root_certificates(store)
+                .with_no_client_auth();
+
+            Self::with_client_config(Arc::new(config), client, domain).await
+        }
+
+        pub async fn with_client_config(
+            config: Arc<ClientConfig>,
+            client: TcpClient,
+            domain: &str,
+        ) -> Result<Self> {
+            let connector = TlsConnector::from(config);
+            let domain = ServerName::try_from(domain).map_err(TlsError::from)?;
+
+            Ok(Self {
+                inner: connector.connect(domain, client.inner).await?,
+            })
+        }
+    }
+
+    impl Client for TlsClient {
+        type Reader = ReadHalf<TlsStream<TcpStream>>;
+        type Writer = WriteHalf<TlsStream<TcpStream>>;
+
+        fn split(self) -> (Self::Reader, Self::Writer) {
+            io::split(self.inner)
+        }
+    }
+
+    pub struct TlsClientBuilder {
+        #[cfg(feature = "tls-webpki-roots")]
+        webpki_roots: bool,
+        #[cfg(feature = "tls-native-certs")]
+        native_certs: bool,
+        custom_certs: Vec<Certificate>,
+    }
+
+    impl TlsClientBuilder {
+        pub const fn new() -> Self {
+            Self {
+                #[cfg(feature = "tls-webpki-roots")]
+                webpki_roots: false,
+                #[cfg(feature = "tls-native-certs")]
+                native_certs: false,
+                custom_certs: Vec::new(),
+            }
+        }
+
+        #[cfg(feature = "tls-webpki-roots")]
+        pub const fn with_webpki_roots(mut self) -> Self {
+            self.webpki_roots = true;
+            self
+        }
+
+        #[cfg(feature = "tls-native-certs")]
+        pub const fn with_native_certs(mut self) -> Self {
+            self.native_certs = true;
+            self
+        }
+
+        pub fn with_cert(mut self, cert: Certificate) -> Self {
+            self.custom_certs.push(cert);
+            self
+        }
+
+        pub fn with_certs(mut self, certs: impl IntoIterator<Item = Certificate>) -> Self {
+            self.custom_certs.extend(certs);
+            self
+        }
+
+        pub async fn build(self, client: TcpClient, domain: &str) -> Result<TlsClient> {
+            let mut store = RootCertStore::empty();
+
+            #[cfg(feature = "tls-webpki-roots")]
+            {
+                if self.webpki_roots {
+                    store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|ta| {
+                        tokio_rustls::rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
+                            ta.subject,
+                            ta.spki,
+                            ta.name_constraints,
+                        )
+                    }))
+                }
+            }
+
+            #[cfg(feature = "tls-native-certs")]
+            {
+                if self.native_certs {
+                    for cert in rustls_native_certs::load_native_certs().unwrap() {
+                        store
+                            .add(&tokio_rustls::rustls::Certificate(cert.0))
+                            .map_err(TlsError::from)?;
+                    }
+                }
+            }
+
+            for cert in self.custom_certs {
+                store.add(&cert).map_err(TlsError::from)?;
+            }
+
+            TlsClient::new(store, client, domain).await
+        }
+    }
+
+    impl Default for TlsClientBuilder {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+}
+
 /// Get a [`ClientSender`] and [`ClientReceiver`] pair
 pub fn connect(
     connection: impl Client,

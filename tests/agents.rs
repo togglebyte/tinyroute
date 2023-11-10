@@ -8,10 +8,8 @@ pub enum Address {
 }
 
 impl ToAddress for Address {
-    fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        match bytes {
-            _ => None,
-        }
+    fn from_bytes(_bytes: &[u8]) -> Option<Self> {
+        None
     }
 }
 
