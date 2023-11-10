@@ -53,7 +53,7 @@ async fn remote_message() {
 
     match msg {
         Message::RemoteMessage { bytes, .. } => assert_eq!(b"hello world", bytes.as_ref()),
-        _ => panic!("invalid message")
+        _ => panic!("invalid message"),
     }
 
     // Shutdown and cleanup

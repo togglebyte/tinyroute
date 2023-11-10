@@ -1,11 +1,11 @@
-use std::io::{stdin, Result};
-use std::time::Duration;
-use std::thread;
 use std::env::args;
-use flume::Receiver;
+use std::io::{stdin, Result};
+use std::thread;
+use std::time::Duration;
 
-use tinyroute::client::{connect, UdsClient, ClientMessage};
-use tinyroute::frame::{FramedMessage, Frame};
+use flume::Receiver;
+use tinyroute::client::{connect, ClientMessage, UdsClient};
+use tinyroute::frame::{Frame, FramedMessage};
 
 fn input() -> Receiver<FramedMessage> {
     let (tx, rx) = flume::unbounded();
@@ -34,7 +34,7 @@ async fn run(rx: Receiver<FramedMessage>, addr: String) {
 
     while let Ok(bytes) = rx.recv() {
         if let Err(_) = write_tx.send_async(ClientMessage::Payload(bytes)).await {
-            break
+            break;
         }
     }
 
@@ -57,4 +57,3 @@ async fn main() {
     let rx = input();
     run(rx, addr).await;
 }
-

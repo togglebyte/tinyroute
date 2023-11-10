@@ -3,9 +3,9 @@ use std::convert::TryInto;
 use std::mem::size_of;
 use std::ops::Range;
 
-use bytes::{Bytes, BufMut, BytesMut};
-
+use bytes::{BufMut, Bytes, BytesMut};
 use tokio::io::{AsyncRead, AsyncReadExt};
+
 use crate::errors::{Error, Result};
 
 const BUF_SIZE: usize = 1024;
@@ -26,7 +26,6 @@ pub enum FrameOutput {
 /// prefixed to it.
 #[derive(Debug, Clone)]
 pub struct FramedMessage(pub Bytes);
-
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
@@ -71,7 +70,7 @@ impl Header {
 /// -------------------------------------
 /// ```
 ///
-/// Example of a large frame 
+/// Example of a large frame
 /// (u32::MAX is the maxiumum payload size):
 ///
 /// ```text
@@ -80,7 +79,6 @@ impl Header {
 /// ------------------------------------------------
 /// | 2           | 260        | .......           |
 /// ------------------------------------------------
-///
 /// ```
 ///
 ///
@@ -94,10 +92,9 @@ impl Header {
 /// match frame.try_msg() {
 ///     Ok(Some(payload)) => { /* a framed message */ }
 ///     Ok(None) => { /* read was successful, but didn't contain a complete message */ }
-///     Err(e) =>  { /* error */ }
+///     Err(e) => { /* error */ }
 /// }
 /// # }
-///
 /// ```
 #[derive(Debug)]
 pub struct Frame {
@@ -142,7 +139,7 @@ impl Frame {
 
         Ok(bytes_read)
     }
-    
+
     pub fn extend(&mut self, bytes: &[u8]) -> usize {
         // As long as there is room in the buffer, keep extending the slice
         // until either:
@@ -156,14 +153,13 @@ impl Frame {
         len
     }
 
-
     /// Frame a message.
     /// This is particularly useful when using the [`crate::client::connect`]
-    /// 
+    ///
     /// ```
     /// # use tokio::io::AsyncRead;
     /// use tinyroute::client::{ClientMessage, ClientSender};
-    /// use tinyroute::frame::{FramedMessage, Frame};
+    /// use tinyroute::frame::{Frame, FramedMessage};
     ///
     /// # fn run(mut sender: ClientSender) {
     /// let msg = b"hello world";
@@ -203,7 +199,7 @@ impl Frame {
         let header = match Header::from_u8(self.buffer[0]) {
             Some(Header::Heartbeat) => {
                 // Since it's a heartbeat, just back the bytes_read up by one,
-                // so it's overwritten next time, as a `read` and `async_read` will 
+                // so it's overwritten next time, as a `read` and `async_read` will
                 // read into `self.available_slice_mut()`.
                 self.bytes_read -= 1;
                 return Ok(Some(FrameOutput::Heartbeat));
@@ -258,7 +254,7 @@ impl Frame {
                 Ok(Some(offset..size + offset))
             }
             Header::Large | Header::Small => Ok(None),
-            Header::Unset | Header::Heartbeat => unreachable!()
+            Header::Unset | Header::Heartbeat => unreachable!(),
         }
     }
 

@@ -1,10 +1,13 @@
 //! ```
 //! use std::io::{Read, Write};
+//!
+//! use tinyroute::client::{
+//!     connect, Client, ClientMessage, ClientReceiver, ClientSender, TcpClient,
+//! };
+//! use tinyroute::frame::Frame;
 //! use tokio::io::{AsyncReadExt, AsyncWriteExt};
 //! use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 //! use tokio::sync::mpsc;
-//! use tinyroute::client::{ClientSender, ClientReceiver, ClientMessage, connect, Client, TcpClient};
-//! use tinyroute::frame::Frame;
 //!
 //! #[tokio::main]
 //! async fn main() {
@@ -40,13 +43,13 @@ use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
+use flume::{Receiver, Sender};
 use log::{error, info};
 
+use crate::client::jitter;
 use crate::errors::{Error, Result};
 use crate::frame::{Frame, FrameOutput, FramedMessage};
 use crate::ADDRESS_SEP;
-use crate::client::jitter;
-use flume::{Receiver, Sender};
 
 /// Type alias for `tokio::mpsc::Receiver<Vec<u8>>`
 pub type ClientReceiver = Receiver<Vec<u8>>;
@@ -169,7 +172,10 @@ impl Client for TcpClient {
 }
 
 /// Get a [`ClientSender`] and [`ClientReceiver`] pair
-pub fn connect(connection: impl Client, heartbeat: Option<Duration>) -> Result<(ClientSender, ClientReceiver)> {
+pub fn connect(
+    connection: impl Client,
+    heartbeat: Option<Duration>,
+) -> Result<(ClientSender, ClientReceiver)> {
     let (writer_tx, writer_rx) = flume::unbounded();
     let (reader_tx, reader_rx) = flume::unbounded();
 
@@ -190,7 +196,10 @@ pub fn connect(connection: impl Client, heartbeat: Option<Duration>) -> Result<(
 pub fn run_heartbeat(freq: Duration, writer_tx: Sender<ClientMessage>) {
     info!("Start beat");
     // Heart beat should never be less than a second
-    assert!(freq.as_millis() > 1000, "Heart beat should never be less than a second");
+    assert!(
+        freq.as_millis() > 1000,
+        "Heart beat should never be less than a second"
+    );
 
     loop {
         thread::sleep(freq - jitter());
@@ -216,7 +225,9 @@ fn use_reader(
                 Ok(0) => break 'read,
                 Ok(_) => match frame.try_msg() {
                     Ok(None) => break 'msg,
-                    Ok(Some(FrameOutput::Heartbeat)) => error!("received a heartbeat on the reader"),
+                    Ok(Some(FrameOutput::Heartbeat)) => {
+                        error!("received a heartbeat on the reader")
+                    }
                     Ok(Some(FrameOutput::Message(payload))) => {
                         if let Err(e) = output_tx.send(payload) {
                             error!("Failed to send client message: {}", e);
@@ -240,7 +251,10 @@ fn use_reader(
     info!("Client closed (reader)");
 }
 
-fn use_writer(mut writer: impl std::io::Write + Send + 'static, rx: Receiver<ClientMessage>) -> Result<()> {
+fn use_writer(
+    mut writer: impl std::io::Write + Send + 'static,
+    rx: Receiver<ClientMessage>,
+) -> Result<()> {
     loop {
         let msg = rx.recv().map_err(|_| Error::ChannelClosed)?;
         match msg {

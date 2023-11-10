@@ -1,4 +1,4 @@
-use std::ops::{DerefMut, Deref};
+use std::ops::{Deref, DerefMut};
 
 use flume::Sender;
 

@@ -1,11 +1,11 @@
-use std::io::{stdin, Result};
-use std::time::Duration;
-use std::thread;
 use std::env::args;
-use flume::Receiver;
+use std::io::{stdin, Result};
+use std::thread;
+use std::time::Duration;
 
-use tinyroute::client::{connect, TcpClient, ClientMessage, ClientReceiver};
-use tinyroute::frame::{FramedMessage, Frame};
+use flume::Receiver;
+use tinyroute::client::{connect, ClientMessage, ClientReceiver, TcpClient};
+use tinyroute::frame::{Frame, FramedMessage};
 
 fn input() -> Receiver<FramedMessage> {
     let (tx, rx) = flume::unbounded();
@@ -35,7 +35,7 @@ async fn run(rx: Receiver<FramedMessage>, port: u16) {
 
     while let Ok(bytes) = rx.recv() {
         if let Err(_) = write_tx.send(ClientMessage::Payload(bytes)) {
-            break
+            break;
         }
     }
 }
@@ -52,7 +52,12 @@ async fn output(read_rx: ClientReceiver) -> Option<()> {
 async fn main() {
     pretty_env_logger::init();
 
-    let port = args().skip(1).next().map(|s| s.parse::<u16>().ok()).flatten().unwrap_or(6789);
+    let port = args()
+        .skip(1)
+        .next()
+        .map(|s| s.parse::<u16>().ok())
+        .flatten()
+        .unwrap_or(6789);
     let rx = input();
     run(rx, port).await;
 }

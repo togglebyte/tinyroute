@@ -1,10 +1,13 @@
 //! ```
 //! use std::io::{Read, Write};
+//!
+//! use tinyroute::client::{
+//!     connect, Client, ClientMessage, ClientReceiver, ClientSender, TcpClient,
+//! };
+//! use tinyroute::frame::Frame;
 //! use tokio::io::{AsyncReadExt, AsyncWriteExt};
 //! use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 //! use tokio::sync::mpsc;
-//! use tinyroute::client::{ClientSender, ClientReceiver, ClientMessage, connect, Client, TcpClient};
-//! use tinyroute::frame::Frame;
 //!
 //! #[tokio::main]
 //! async fn main() {
@@ -37,19 +40,17 @@
 use std::path::Path;
 use std::time::Duration;
 
+use flume::{Receiver, Sender};
 use log::{error, info};
 use rand::prelude::*;
-use tokio::net::{TcpStream, UnixStream};
-
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
-use tokio::net::ToSocketAddrs;
+use tokio::net::{TcpStream, ToSocketAddrs, UnixStream};
 use tokio::spawn;
 use tokio::time::sleep;
 
 use crate::errors::{Error, Result};
 use crate::frame::{Frame, FrameOutput, FramedMessage};
 use crate::ADDRESS_SEP;
-use flume::{Receiver, Sender};
 
 /// Type alias for `tokio::mpsc::Receiver<Vec<u8>>`
 pub type ClientReceiver = Receiver<Vec<u8>>;
@@ -174,7 +175,10 @@ impl Client for TcpClient {
 }
 
 /// Get a [`ClientSender`] and [`ClientReceiver`] pair
-pub fn connect(connection: impl Client, heartbeat: Option<Duration>) -> (ClientSender, ClientReceiver) {
+pub fn connect(
+    connection: impl Client,
+    heartbeat: Option<Duration>,
+) -> (ClientSender, ClientReceiver) {
     let (writer_tx, writer_rx) = flume::unbounded();
     let (reader_tx, reader_rx) = flume::unbounded();
 
@@ -193,7 +197,10 @@ pub fn connect(connection: impl Client, heartbeat: Option<Duration>) -> (ClientS
 pub async fn run_heartbeat(freq: Duration, writer_tx: Sender<ClientMessage>) {
     info!("Start beat");
     // Heart beat should never be less than a second
-    assert!(freq.as_millis() > 1000, "Heart beat should never be less than a second");
+    assert!(
+        freq.as_millis() > 1000,
+        "Heart beat should never be less than a second"
+    );
 
     loop {
         sleep(freq - jitter()).await;
@@ -226,7 +233,9 @@ async fn use_reader(
                 Ok(0) => break 'read,
                 Ok(_) => match frame.try_msg() {
                     Ok(None) => break 'msg,
-                    Ok(Some(FrameOutput::Heartbeat)) => error!("received a heartbeat on the reader"),
+                    Ok(Some(FrameOutput::Heartbeat)) => {
+                        error!("received a heartbeat on the reader")
+                    }
                     Ok(Some(FrameOutput::Message(payload))) => {
                         if let Err(e) = output_tx.send_async(payload).await {
                             error!("Failed to send client message: {}", e);

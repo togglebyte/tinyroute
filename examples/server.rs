@@ -1,6 +1,6 @@
 use std::fs::remove_file;
 
-use tinyroute::server::{Server, UdsConnections, TcpConnections};
+use tinyroute::server::{Server, TcpConnections, UdsConnections};
 use tinyroute::{Agent, Message, Router, ToAddress};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -17,7 +17,7 @@ impl ToAddress for Address {
     fn from_bytes(bytes: &[u8]) -> Option<Address> {
         match bytes {
             b"log" => Some(Address::Log),
-            _ => None
+            _ => None,
         }
     }
 
@@ -26,9 +26,13 @@ impl ToAddress for Address {
     }
 }
 
-
 async fn log(mut agent: Agent<(), Address>) {
-    while let Ok(Message::RemoteMessage { sender, host, bytes }) = agent.recv().await {
+    while let Ok(Message::RemoteMessage {
+        sender,
+        host,
+        bytes,
+    }) = agent.recv().await
+    {
         if let Ok(s) = std::str::from_utf8(&bytes) {
             println!("{}@{} > {}", sender.to_string(), host, s);
         }
@@ -53,21 +57,27 @@ async fn main() {
     let tcp_server = Server::new(tcp_listener, tcp_agent);
 
     // Start the Uds server
-    let uds_handle = tokio::spawn(async move { 
+    let uds_handle = tokio::spawn(async move {
         let mut id = 0;
-        uds_server.run(None, None, || {
-            id += 1;
-            Address::UdsCon(id)
-        }).await.unwrap(); 
+        uds_server
+            .run(None, None, || {
+                id += 1;
+                Address::UdsCon(id)
+            })
+            .await
+            .unwrap();
     });
 
     // Start the Tcp server
     let tcp_handle = tokio::spawn(async move {
         let mut id = 0;
-        tcp_server.run(None, None, || {
-            id += 1;
-            Address::TcpCon(id)
-        }).await.unwrap(); 
+        tcp_server
+            .run(None, None, || {
+                id += 1;
+                Address::TcpCon(id)
+            })
+            .await
+            .unwrap();
     });
 
     let router_handle = tokio::spawn(router.run());

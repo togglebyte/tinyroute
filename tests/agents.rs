@@ -1,5 +1,5 @@
-use tinyroute::{Agent, Message, Router, ToAddress};
 use tinyroute::errors::Error;
+use tinyroute::{Agent, Message, Router, ToAddress};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Address {
@@ -15,7 +15,11 @@ impl ToAddress for Address {
     }
 }
 
-fn setup() -> (Agent<String, Address>, Agent<String, Address>, tokio::task::JoinHandle<()>) {
+fn setup() -> (
+    Agent<String, Address>,
+    Agent<String, Address>,
+    tokio::task::JoinHandle<()>,
+) {
     let mut router = Router::new();
     let agent_a = router.new_agent::<String>(Some(10), Address::A).unwrap();
     let agent_b = router.new_agent::<String>(Some(10), Address::B).unwrap();
@@ -23,7 +27,7 @@ fn setup() -> (Agent<String, Address>, Agent<String, Address>, tokio::task::Join
     let handle = tokio::spawn(async move {
         router.run().await;
     });
-    
+
     (agent_a, agent_b, handle)
 }
 

@@ -1,4 +1,4 @@
-//! A [`Bridge`] is a connection between [`crate::Router`]s. 
+//! A [`Bridge`] is a connection between [`crate::Router`]s.
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -6,9 +6,7 @@ use bytes::Bytes;
 use log::{error, info};
 
 use crate::agent::{Agent, Message};
-use crate::client::{
-    connect, ClientMessage, ClientReceiver, ClientSender, TcpClient,
-};
+use crate::client::{connect, ClientMessage, ClientReceiver, ClientSender, TcpClient};
 use crate::errors::{Error, Result};
 use crate::frame::{Frame, FramedMessage};
 use crate::{ToAddress, ADDRESS_SEP};
@@ -37,16 +35,15 @@ pub enum BridgeError {
 /// # }
 /// ```
 impl BridgeMessageOut {
-    pub fn new<T: Into<Option<Vec<u8>>>> (
+    pub fn new<T: Into<Option<Vec<u8>>>>(
         sender: T,
         remote_recipient: Bytes,
         bytes: Bytes,
     ) -> Option<Self> {
         let sender_bytes = sender.into()?;
         // Sender + | + recipient + | + message
-        let mut payload = Vec::with_capacity(
-            sender_bytes.len() + 1 + remote_recipient.len() + 1 + bytes.len(),
-        );
+        let mut payload =
+            Vec::with_capacity(sender_bytes.len() + 1 + remote_recipient.len() + 1 + bytes.len());
         payload.extend_from_slice(&remote_recipient);
         payload.push(ADDRESS_SEP);
         payload.extend_from_slice(&sender_bytes);
@@ -97,7 +94,10 @@ impl BridgeMessageIn {
         let sender_address = Bytes::from(sender_address);
         let bytes = Bytes::from(input[offset..].to_vec());
 
-        Ok(Self { sender: sender_address, message: bytes })
+        Ok(Self {
+            sender: sender_address,
+            message: bytes,
+        })
     }
 }
 
@@ -174,7 +174,14 @@ impl<'addr, A: ToAddress> Bridge<'addr, A> {
         retry: Retry,
         heartbeat: Option<Duration>,
     ) -> Self {
-        Self { agent, addr, reconnect, heartbeat, retry, connection: None }
+        Self {
+            agent,
+            addr,
+            reconnect,
+            heartbeat,
+            retry,
+            connection: None,
+        }
     }
 
     async fn reconnect(&mut self) -> Result<(ClientSender, ClientReceiver)> {
@@ -194,7 +201,10 @@ impl<'addr, A: ToAddress> Bridge<'addr, A> {
             self.connection = Some(self.reconnect().await?);
         }
 
-        let (bridge_output_tx, rx_client_closed) = self.connection.as_mut().expect("This is okay, because we check the connection above");
+        let (bridge_output_tx, rx_client_closed) = self
+            .connection
+            .as_mut()
+            .expect("This is okay, because we check the connection above");
 
         // If the `rx_client` is closed, then reconnect.
         // If the message from the `agent` is invalid, continue and try the next one
