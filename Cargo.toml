@@ -7,12 +7,12 @@ edition = "2021"
 default = []
 
 [dependencies]
-bytes = "1.1.0"
-flume = "0.10.9"
+bytes = "1.5.0"
+flume = "0.11.0"
 fxhash = "0.2.1"
-log = "0.4.14"
-rand = "0.8.4"
-thiserror = "1.0.29"
+log = "0.4.20"
+rand = "0.8.5"
+thiserror = "1.0.50"
 tokio = { version = "1.11.0", features = ["net", "rt", "rt-multi-thread", "time", "io-util", "macros" ] }
 
 [dev-dependencies]

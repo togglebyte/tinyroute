@@ -29,9 +29,6 @@ pub enum Error {
     #[error("Failed to deliver the message to the router")]
     RouterUnrecoverableError,
 
-    #[error("Failed to send message to another channel")]
-    GenericChannelSendError,
-
     #[error("Remote message to local channel")]
     RemoteToLocal,
 
@@ -50,6 +47,6 @@ pub enum Error {
 
 impl<A: ToAddress> From<flume::SendError<AgentMsg<A>>> for Error {
     fn from(_: flume::SendError<AgentMsg<A>>) -> Self {
-        Self::GenericChannelSendError
+        Self::ChannelClosed
     }
 }

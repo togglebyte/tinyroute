@@ -29,10 +29,7 @@
 //! #     T: Send + 'static
 //! # {
 //! let capacity = 100;
-//! let agent = router.new_agent::<T>(
-//!     Some(capacity),
-//!     Address::Id(0),
-//! );
+//! let agent = router.new_agent::<T>(Some(capacity), Address::Id(0));
 //! # }
 //! ```
 //!
@@ -81,11 +78,19 @@
 //!
 //! while let Ok(msg) = agent.recv().await {
 //!     match msg {
-//!         Message::Value(value, sender) => println!("message received: {} from {}", value, sender.to_string()),
-//!         Message::Fetch(_) => println!("fetch received"),
-//!         Message::RemoteMessage { bytes, sender, host } => println!("{}@{} sent {} bytes", sender.to_string(), host, bytes.len()),
+//!         Message::Value(value, sender) => {
+//!             println!("message received: {} from {}", value, sender.to_string())
+//!         }
+//!         Message::Request(_) => println!("request received"),
+//!         Message::RemoteMessage {
+//!             bytes,
+//!             sender,
+//!             host,
+//!         } => println!("{}@{} sent {} bytes", sender.to_string(), host, bytes.len()),
 //!         Message::Shutdown => break,
-//!         Message::AgentRemoved(address) => println!("Agent {} was removed, and we care", address.to_string()),
+//!         Message::AgentRemoved(address) => {
+//!             println!("Agent {} was removed, and we care", address.to_string())
+//!         }
 //!     }
 //! }
 //! # }
@@ -95,13 +100,15 @@ use std::fmt::{Debug, Display, Formatter, Result as DisplayResult};
 use std::marker::PhantomData;
 
 use bytes::Bytes;
+use flume::Receiver;
 
 use crate::bridge::BridgeMessageOut;
 use crate::errors::{Error, Result};
 use crate::frame::Frame;
-use crate::router::{Request, RouterMessage, RouterTx, ToAddress};
+use crate::request::{Pending, Request};
+use crate::response::Response;
+use crate::router::{RouterMessage, RouterTx, ToAddress};
 use crate::server::ConnectionAddr;
-use flume::Receiver;
 
 // -----------------------------------------------------------------------------
 //     - Any message -
@@ -124,9 +131,13 @@ pub enum Message<T: 'static, A: ToAddress> {
     /// Value containing an instance of T and the address of the sender.
     Value(T, A),
     /// Request data from this agent
-    Fetch(Request),
+    Request(Request<Pending>),
     /// Bytes received from a socket
-    RemoteMessage { bytes: Bytes, sender: A, host: ConnectionAddr },
+    RemoteMessage {
+        bytes: Bytes,
+        sender: A,
+        host: ConnectionAddr,
+    },
     /// A tracked agent was removed
     AgentRemoved(A),
     /// Close this agent down.
@@ -137,14 +148,16 @@ impl<T: Clone + 'static, A: ToAddress> Clone for Message<T, A> {
     fn clone(&self) -> Self {
         match self {
             Self::Value(val, addr) => Self::Value(val.clone(), addr.clone()),
-            Self::Fetch(_) => panic!("Can not clone fetch requests"),
-            Self::RemoteMessage { bytes, sender, host } => {
-                Self::RemoteMessage {
-                    bytes: bytes.clone(),
-                    sender: sender.clone(),
-                    host: host.clone(),
-                }
-            }
+            Self::Request(_) => panic!("Can not clone requests"),
+            Self::RemoteMessage {
+                bytes,
+                sender,
+                host,
+            } => Self::RemoteMessage {
+                bytes: bytes.clone(),
+                sender: sender.clone(),
+                host: host.clone(),
+            },
             Self::AgentRemoved(addr) => Self::AgentRemoved(addr.clone()),
             Self::Shutdown => Self::Shutdown,
         }
@@ -157,8 +170,12 @@ impl<T: Display + 'static, A: ToAddress> Display for Message<T, A> {
             Self::Value(val, sender) => {
                 write!(f, "{} > Value<{}>", sender.to_string(), val)
             }
-            Self::Fetch(_) => write!(f, "<Fetch>"),
-            Self::RemoteMessage { bytes, sender, host } => write!(
+            Self::Request(_) => write!(f, "<Request>"),
+            Self::RemoteMessage {
+                bytes,
+                sender,
+                host,
+            } => write!(
                 f,
                 "{}@{} > Bytes({})",
                 sender.to_string(),
@@ -179,10 +196,12 @@ impl<T: Debug + 'static, A: ToAddress> Debug for Message<T, A> {
             Self::Value(val, sender) => {
                 write!(f, "{} > Value<{:?}>", sender.to_string(), val)
             }
-            Self::Fetch(_) => {
-                write!(f, "<Fetch>")
-            }
-            Self::RemoteMessage { bytes, sender, host } => write!(
+            Self::Request(_) => write!(f, "<Request>"),
+            Self::RemoteMessage {
+                bytes,
+                sender,
+                host,
+            } => write!(
                 f,
                 "{}@{} > Bytes({})",
                 sender.to_string(),
@@ -202,7 +221,7 @@ impl<T: Debug + 'static, A: ToAddress> Debug for Message<T, A> {
 // -----------------------------------------------------------------------------
 pub(crate) enum AgentMsg<A> {
     Message(AnyMessage, A), // A is the address of the sender
-    Fetch(Request),
+    Request(Request<Pending>),
     RemoteMessage(Bytes, A, ConnectionAddr),
     AgentRemoved(A),
     Shutdown,
@@ -215,10 +234,12 @@ impl<A: ToAddress> AgentMsg<A> {
                 Ok(val) => Ok(Message::Value(*val, sender)),
                 Err(_) => Err(Error::InvalidMessageType),
             },
-            Self::Fetch(request) => Ok(Message::Fetch(request)),
-            Self::RemoteMessage(bytes, sender, host) => {
-                Ok(Message::RemoteMessage { bytes, sender, host })
-            }
+            Self::Request(request) => Ok(Message::Request(request)),
+            Self::RemoteMessage(bytes, sender, host) => Ok(Message::RemoteMessage {
+                bytes,
+                sender,
+                host,
+            }),
             Self::AgentRemoved(address) => Ok(Message::AgentRemoved(address)),
             Self::Shutdown => Ok(Message::Shutdown),
         }
@@ -245,12 +266,13 @@ impl<S, A: ToAddress> Drop for Agent<S, A> {
 }
 
 impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
-    pub(crate) fn new(
-        router_tx: RouterTx<A>,
-        address: A,
-        rx: Receiver<AgentMsg<A>>,
-    ) -> Self {
-        Self { router_tx, rx, address, _p: PhantomData }
+    pub(crate) fn new(router_tx: RouterTx<A>, address: A, rx: Receiver<AgentMsg<A>>) -> Self {
+        Self {
+            router_tx,
+            rx,
+            address,
+            _p: PhantomData,
+        }
     }
 
     /// Create a new agent and register it with the router.
@@ -270,7 +292,10 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
     /// #     }
     /// # }
     /// # async fn run(agent: Agent<(), Address>) {
-    /// let new_agent = agent.new_agent::<()>(None, Address::NewAgent).await.unwrap();
+    /// let new_agent = agent
+    ///     .new_agent::<()>(None, Address::NewAgent)
+    ///     .await
+    ///     .unwrap();
     /// # }
     /// ```
     pub async fn new_agent<U: Send + 'static>(
@@ -282,18 +307,13 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
             Some(cap) => flume::bounded(cap),
             None => flume::unbounded(),
         };
-        let agent =
-            Agent::new(self.router_tx.clone(), address.clone(), transport_rx);
+        let agent = Agent::new(self.router_tx.clone(), address.clone(), transport_rx);
         self.router_tx.register_agent(address, transport_tx).await?;
         Ok(agent)
     }
 
-    pub fn router_tx(&self) -> RouterTx<A> {
-        self.router_tx.clone()
-    }
-
     /// Track an agent (or more precisely an address).
-    /// If the address is unregistered, the tracking agent will
+    /// When the address is unregistered, the tracking agent will
     /// receive a `Message::AgentRemoved(tracked_address)`.
     pub async fn track(&self, address: A) -> Result<()> {
         self.router_tx
@@ -303,6 +323,14 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
             })
             .await?;
         Ok(())
+    }
+
+    pub async fn request<Resp: Send + 'static, Req: Send + 'static>(
+        &self,
+        from: A,
+        request_body: Req,
+    ) -> Result<Response<Resp>> {
+        self.router_tx.request(from, request_body).await
     }
 
     /// Tell one address to track this agents address.
@@ -323,22 +351,24 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
         &self.address
     }
 
+    /// Receive messages.
     pub async fn recv(&mut self) -> Result<Message<T, A>> {
-        let msg =
-            self.rx.recv_async().await.map_err(|_| Error::ChannelClosed)?;
+        let msg = self
+            .rx
+            .recv_async()
+            .await
+            .map_err(|_| Error::ChannelClosed)?;
         msg.into_local_message()
     }
 
+    /// Blocking receive.
     pub fn recv_sync(&mut self) -> Result<Message<T, A>> {
         let msg = self.rx.recv().map_err(|_| Error::ChannelClosed)?;
         msg.into_local_message()
     }
 
-    pub async fn send<U: Send + 'static>(
-        &self,
-        recipient: A,
-        message: U,
-    ) -> Result<()> {
+    /// Send a message to an address
+    pub async fn send<U: Send + 'static>(&self, recipient: A, message: U) -> Result<()> {
         let router_msg = RouterMessage::Message {
             recipient,
             sender: self.address.clone(),
@@ -348,6 +378,7 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
         Ok(())
     }
 
+    /// Send a remote message
     pub async fn send_remote(
         &self,
         recipients: impl IntoIterator<Item = A>,
@@ -369,7 +400,9 @@ impl<T: Send + 'static, A: ToAddress> Agent<T, A> {
 
     /// Tell the router to shut down an agent
     pub async fn send_shutdown(&self, recipient: A) -> Result<()> {
-        self.router_tx.send(RouterMessage::Shutdown(recipient)).await
+        self.router_tx
+            .send(RouterMessage::Shutdown(recipient))
+            .await
     }
 
     /// This is used for debugging, to print

@@ -15,39 +15,29 @@
 //! let mut server = Server::new(tcp_listener, server_agent);
 //! let mut id = 0;
 //!
-//! while let Ok(connection) = server.next(
-//!     Address(id),
-//!     None,
-//!     Some(1024)
-//! ).await {
+//! while let Ok(connection) = server.next(Address(id), None, Some(1024)).await {
 //!     id += 1;
 //! }
 //! # }
 //! ```
 use std::fmt::{Display, Formatter};
 use std::future::Future;
+use std::path::Path;
 use std::pin::Pin;
 use std::time::Duration;
-use std::path::Path;
 
 use bytes::Bytes;
-// use futures::future::FutureExt;
 use log::error;
-
-use crate::ADDRESS_SEP;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+pub use tokio::net::{TcpListener, TcpStream, UnixListener, UnixStream};
 use tokio::spawn;
 use tokio::time::sleep;
-// TODO: remove commented out use statements
-// pub use crate::runtime::{TcpConnections, UdsConnections, TcpListener, UdsListener};
-// use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
-pub use tokio::net::{UnixListener, UnixStream, TcpListener, TcpStream};
 
 use crate::agent::{Agent, Message};
 use crate::errors::{Error, Result};
 use crate::frame::{Frame, FrameOutput, FramedMessage};
-
 use crate::router::{RouterMessage, RouterTx, ToAddress};
+use crate::ADDRESS_SEP;
 
 /// A unix domain socket server
 pub struct UdsConnections {
@@ -65,9 +55,7 @@ impl UdsConnections {
     pub async fn bind(addr: impl AsRef<Path>) -> Result<Self> {
         let inner = UnixListener::bind(addr.as_ref())?;
 
-        let inst = Self {
-            inner,
-        };
+        let inst = Self { inner };
 
         Ok(inst)
     }
@@ -107,9 +95,7 @@ impl TcpConnections {
     pub async fn bind(addr: &str) -> Result<Self> {
         let inner = TcpListener::bind(addr).await?;
 
-        let inst = Self {
-            inner,
-        };
+        let inst = Self { inner };
 
         Ok(inst)
     }
@@ -172,7 +158,8 @@ pub trait Connections: Sync {
 }
 
 /// Because writing this entire trait malarkey is messy!
-pub type ServerFuture<'a, T, U> = Pin<Box<dyn Future<Output = Result<(T, U, ConnectionAddr)>> + Send + 'a>>;
+pub type ServerFuture<'a, T, U> =
+    Pin<Box<dyn Future<Output = Result<(T, U, ConnectionAddr)>> + Send + 'a>>;
 
 /// Accept incoming connections and provide agents as an abstraction.
 ///
@@ -191,11 +178,7 @@ pub type ServerFuture<'a, T, U> = Pin<Box<dyn Future<Output = Result<(T, U, Conn
 /// let mut server = Server::new(tcp_listener, server_agent);
 /// let mut id = 0;
 ///
-/// while let Ok(connection) = server.next(
-///     Address(id),
-///     None,
-///     Some(1024)
-/// ).await {
+/// while let Ok(connection) = server.next(Address(id), None, Some(1024)).await {
 ///     id += 1;
 /// }
 /// # }
@@ -207,7 +190,10 @@ pub struct Server<C: Connections, A: Sync + ToAddress> {
 
 impl<C: Connections, A: Sync + ToAddress> Server<C, A> {
     pub fn new(server: C, server_agent: Agent<(), A>) -> Self {
-        Self { server, server_agent }
+        Self {
+            server,
+            server_agent,
+        }
     }
 
     /// Produce a [`Connection`]
@@ -222,18 +208,19 @@ impl<C: Connections, A: Sync + ToAddress> Server<C, A> {
             con = self.server.accept() => con?,
         };
 
-        let agent = self.server_agent.new_agent(cap, connection_address.clone()).await?;
+        let agent = self
+            .server_agent
+            .new_agent(cap, connection_address.clone())
+            .await?;
 
         // Spawn the reader
-        let _reader_handle = spawn(
-            spawn_reader(
-                reader,
-                connection_address,
-                socket_addr,
-                self.server_agent.router_tx.clone(),
-                timeout
-            )
-        ); 
+        let _reader_handle = spawn(spawn_reader(
+            reader,
+            connection_address,
+            socket_addr,
+            self.server_agent.router_tx.clone(),
+            timeout,
+        ));
 
         Ok(Connection::new(agent, writer))
     }
@@ -246,8 +233,14 @@ impl<C: Connections, A: Sync + ToAddress> Server<C, A> {
     ///
     /// The `cap` is the message capacity for the [`crate::Agent`] associated with the connection.
     /// If the capacity is `None` an unbounded receiver is created.
-    pub async fn run<F>(mut self, timeout: Option<Duration>, cap: Option<usize>, mut f: F) -> Result<()> 
-        where F: FnMut() -> A
+    pub async fn run<F>(
+        mut self,
+        timeout: Option<Duration>,
+        cap: Option<usize>,
+        mut f: F,
+    ) -> Result<()>
+    where
+        F: FnMut() -> A,
     {
         while let Ok(mut connection) = self.next((f)(), timeout, cap).await {
             spawn(async move {
@@ -273,7 +266,11 @@ pub async fn handle_payload<A: ToAddress>(
     socket_addr: ConnectionAddr,
     sender: A,
 ) -> bool {
-    let address = bytes.iter().cloned().take_while(|b| *b != ADDRESS_SEP).collect::<Vec<u8>>();
+    let address = bytes
+        .iter()
+        .cloned()
+        .take_while(|b| *b != ADDRESS_SEP)
+        .collect::<Vec<u8>>();
 
     // return in the event of the index being
     // larger than the payload it self
@@ -329,27 +326,27 @@ async fn spawn_reader<A, R>(
                         break 'msg false;
                     }
                     Ok(0) => break 'msg false,
-                    Ok(_) => {
-                        match frame.try_msg() {
-                            Ok(None) => break 'msg true,
-                            Err(e) => {
-                                error!("invalid payload. {}", e);
-                                break 'msg false;
-                            }
-                            Ok(Some(FrameOutput::Heartbeat)) => continue,
-                            Ok(Some(FrameOutput::Message(msg))) => {
-                                match handle_payload(
-                                    msg,
-                                    &router_tx,
-                                    socket_addr.clone(),
-                                    sender.clone()
-                                ).await {
-                                    true => continue,
-                                    false => break 'msg false,
-                                }
+                    Ok(_) => match frame.try_msg() {
+                        Ok(None) => break 'msg true,
+                        Err(e) => {
+                            error!("invalid payload. {}", e);
+                            break 'msg false;
+                        }
+                        Ok(Some(FrameOutput::Heartbeat)) => continue,
+                        Ok(Some(FrameOutput::Message(msg))) => {
+                            match handle_payload(
+                                msg,
+                                &router_tx,
+                                socket_addr.clone(),
+                                sender.clone(),
+                            )
+                            .await
+                            {
+                                true => continue,
+                                false => break 'msg false,
                             }
                         }
-                    }
+                    },
                 }
             }
         };

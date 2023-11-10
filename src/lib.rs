@@ -8,7 +8,9 @@ pub mod client;
 pub mod client_sync;
 pub mod errors;
 pub mod frame;
+pub mod request;
 pub mod server;
+mod response;
 
 // -----------------------------------------------------------------------------
 //     - Reexportes -

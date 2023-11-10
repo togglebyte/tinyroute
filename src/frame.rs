@@ -32,9 +32,13 @@ pub struct FramedMessage(pub Bytes);
 #[repr(u8)]
 #[non_exhaustive]
 pub enum Header {
+    /// Header is not set
     Unset,
-    Small, // Content length is  u8::MAX
-    Large, // Content length is u32::MAX
+    /// A small message where the content length fits inside a single byte
+    Small,
+    /// A message with a content length as a u32
+    Large,
+    /// A heartbeat
     Heartbeat = 42,
 }
 
