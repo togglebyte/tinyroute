@@ -6,7 +6,7 @@ pub mod agent;
 pub mod bridge;
 pub mod client;
 pub mod client_sync;
-pub mod errors;
+pub mod error;
 pub mod frame;
 pub mod request;
 mod response;

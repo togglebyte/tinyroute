@@ -5,7 +5,7 @@ use log::{error, info, warn};
 use tokio::spawn;
 
 use crate::agent::{Agent, AgentMsg, AnyMessage};
-use crate::errors::{Error, Result};
+use crate::error::{Error, Result};
 use crate::request::{Pending, Request};
 use crate::response::Response;
 use crate::server::ConnectionAddr;

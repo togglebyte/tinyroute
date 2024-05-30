@@ -1,4 +1,4 @@
-use tinyroute::errors::Error;
+use tinyroute::error::Error;
 use tinyroute::{Agent, Message, Router, ToAddress};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

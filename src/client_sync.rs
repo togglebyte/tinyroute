@@ -47,7 +47,7 @@ use flume::{Receiver, Sender};
 use log::{error, info};
 
 use crate::client::jitter;
-use crate::errors::{Error, Result};
+use crate::error::{Error, Result};
 use crate::frame::{Frame, FrameOutput, FramedMessage};
 use crate::ADDRESS_SEP;
 

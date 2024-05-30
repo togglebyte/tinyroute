@@ -3,8 +3,33 @@ use std::ops::{Deref, DerefMut};
 use flume::Sender;
 
 use crate::agent::AnyMessage;
-use crate::errors::{Error, Result};
+use crate::error::{Error, Result};
 
+/// A request for data.
+///
+/// The request is accompanied by a type that is used
+/// when reading the request.
+/// If the type is incorrect it will produce an `Error::InvalidMessageType` error.
+/// ```
+/// use tinyroute::request::{Pending, Request};
+/// use tinyroute::error::Error;
+/// # async fn run(request: Request<Pending>) {
+/// match request.read::<String>() {
+///     Ok(request) => {
+///         let s: &str = &*request;
+///         match s {
+///             "one" => { let _ = request.reply_async(1usize).await; },
+///             "two" => { let _ = request.reply_async(2usize).await; },
+///             _ => {}
+///         }
+///     }
+///     Err(Error::InvalidMessageType) => {
+///         // The message type was incorrect.
+///     }
+///     Err(e) => panic!("{e}"),
+/// }
+/// # }
+/// ```
 pub struct Request<T> {
     pub(crate) tx: Sender<AnyMessage>,
     pub(crate) data: T,

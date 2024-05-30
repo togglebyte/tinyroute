@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use flume::Receiver;
 
 use crate::agent::AnyMessage;
-use crate::errors::{Error, Result};
+use crate::error::{Error, Result};
 
 // -----------------------------------------------------------------------------
 //     - Response -

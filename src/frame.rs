@@ -6,7 +6,7 @@ use std::ops::Range;
 use bytes::{BufMut, Bytes, BytesMut};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
-use crate::errors::{Error, Result};
+use crate::error::{Error, Result};
 
 const BUF_SIZE: usize = 1024;
 const MAX_BUF_SIZE: usize = BUF_SIZE * 100;

@@ -103,7 +103,7 @@ use bytes::Bytes;
 use flume::Receiver;
 
 use crate::bridge::BridgeMessageOut;
-use crate::errors::{Error, Result};
+use crate::error::{Error, Result};
 use crate::frame::Frame;
 use crate::request::{Pending, Request};
 use crate::response::Response;

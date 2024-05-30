@@ -7,7 +7,7 @@ use log::{error, info};
 
 use crate::agent::{Agent, Message};
 use crate::client::{connect, ClientMessage, ClientReceiver, ClientSender, TcpClient};
-use crate::errors::{Error, Result};
+use crate::error::{Error, Result};
 use crate::frame::{Frame, FramedMessage};
 use crate::{ToAddress, ADDRESS_SEP};
 

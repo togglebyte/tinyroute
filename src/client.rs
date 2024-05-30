@@ -48,7 +48,7 @@ use tokio::net::{TcpStream, ToSocketAddrs, UnixStream};
 use tokio::spawn;
 use tokio::time::sleep;
 
-use crate::errors::{Error, Result};
+use crate::error::{Error, Result};
 use crate::frame::{Frame, FrameOutput, FramedMessage};
 use crate::ADDRESS_SEP;
 
@@ -186,7 +186,7 @@ pub mod tls {
     use tokio_rustls::TlsConnector;
 
     use super::{Client, TcpClient};
-    use crate::errors::{Result, TlsError};
+    use crate::error::{Result, TlsError};
 
     pub struct TlsClient {
         inner: TlsStream<TcpStream>,
