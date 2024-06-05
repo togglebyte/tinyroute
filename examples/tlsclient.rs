@@ -5,7 +5,7 @@ use std::{fs, thread};
 
 use flume::Receiver;
 use log::debug;
-use tinyroute::client::tls::{Certificate, TlsClientBuilder};
+use tinyroute::client::tls::TlsClientBuilder;
 use tinyroute::client::{connect, ClientMessage, ClientReceiver, TcpClient};
 use tinyroute::frame::{Frame, FramedMessage};
 
@@ -40,11 +40,12 @@ async fn run(rx: Receiver<FramedMessage>, port: u16) {
     let addr = format!("127.0.0.1:{}", port);
     let client = TcpClient::connect(addr).await.unwrap();
     let client = TlsClientBuilder::new()
-        .with_cert(Certificate(
+        .with_cert(
             rustls_pemfile::certs(&mut Cursor::new(fs::read(CERT_PATH).unwrap()))
+                .next()
                 .unwrap()
-                .remove(0),
-        ))
+                .unwrap(),
+        )
         .build(client, "localhost")
         .await
         .unwrap();

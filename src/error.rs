@@ -60,7 +60,7 @@ impl<A: ToAddress> From<flume::SendError<AgentMsg<A>>> for Error {
 #[derive(thiserror::Error, Debug)]
 pub enum TlsError {
     #[error("The provided domain name appears to be invalid")]
-    InvalidDnsName(#[from] tokio_rustls::rustls::client::InvalidDnsNameError),
+    InvalidDnsName(#[from] tokio_rustls::rustls::pki_types::InvalidDnsNameError),
     #[error("Failed due to a TLS related issue")]
     Rustls(#[from] tokio_rustls::rustls::Error),
 }
