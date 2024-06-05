@@ -11,15 +11,19 @@ use crate::error::{Error, Result};
 /// when reading the request.
 /// If the type is incorrect it will produce an `Error::InvalidMessageType` error.
 /// ```
-/// use tinyroute::request::{Pending, Request};
 /// use tinyroute::error::Error;
+/// use tinyroute::request::{Pending, Request};
 /// # async fn run(request: Request<Pending>) {
 /// match request.read::<String>() {
 ///     Ok(request) => {
 ///         let s: &str = &*request;
 ///         match s {
-///             "one" => { let _ = request.reply_async(1usize).await; },
-///             "two" => { let _ = request.reply_async(2usize).await; },
+///             "one" => {
+///                 let _ = request.reply_async(1usize).await;
+///             }
+///             "two" => {
+///                 let _ = request.reply_async(2usize).await;
+///             }
 ///             _ => {}
 ///         }
 ///     }

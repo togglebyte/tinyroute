@@ -122,8 +122,8 @@ pub mod tls {
 
     use tokio::io::{ReadHalf, WriteHalf};
     use tokio::net::{TcpListener, TcpStream};
+    pub use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
     use tokio_rustls::rustls::ServerConfig;
-    pub use tokio_rustls::rustls::{Certificate, PrivateKey};
     use tokio_rustls::server::TlsStream;
     use tokio_rustls::TlsAcceptor;
 
@@ -138,14 +138,13 @@ pub mod tls {
     impl TlsConnections {
         pub fn new(
             inner: TcpListener,
-            cert_chain: Vec<Certificate>,
-            key: PrivateKey,
+            cert_chain: Vec<CertificateDer<'static>>,
+            key: PrivateKeyDer<'static>,
         ) -> Result<Self> {
             Ok(Self::new_with_config(
                 inner,
                 Arc::new(
                     ServerConfig::builder()
-                        .with_safe_defaults()
                         .with_no_client_auth()
                         .with_single_cert(cert_chain, key)
                         .map_err(TlsError::from)?,

@@ -3,10 +3,10 @@ use std::io::Cursor;
 use std::path::Path;
 
 use log::debug;
+use rcgen::CertifiedKey;
 use tinyroute::server::tls::TlsConnections;
 use tinyroute::server::{Server, TcpConnections, TcpListener, UdsConnections};
 use tinyroute::{Agent, Message, Router, ToAddress};
-use tokio_rustls::rustls::{Certificate, PrivateKey};
 
 const CERT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/localhost-cert.pem");
 const KEY_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/localhost-key.pem");
@@ -67,25 +67,27 @@ async fn main() {
 
     // Create some quick self-signed certificates for the sake of the example
     if !Path::new(CERT_PATH).exists() || !Path::new(KEY_PATH).exists() {
-        let cert = rcgen::generate_simple_self_signed(["localhost".to_owned()]).unwrap();
-        fs::write(CERT_PATH, cert.serialize_pem().unwrap()).unwrap();
-        fs::write(KEY_PATH, cert.serialize_private_key_pem()).unwrap();
+        let CertifiedKey { key_pair, cert } =
+            rcgen::generate_simple_self_signed(["localhost".to_owned()]).unwrap();
+        fs::write(CERT_PATH, cert.pem()).unwrap();
+        fs::write(KEY_PATH, key_pair.serialize_pem()).unwrap();
     }
 
     let uds_listener = UdsConnections::bind(socket_path).await.unwrap();
     let tcp_listener = TcpConnections::bind("127.0.0.1:6789").await.unwrap();
     let tls_listener = TlsConnections::new(
         TcpListener::bind("127.0.0.1:6790").await.unwrap(),
-        vec![Certificate(
+        vec![
             rustls_pemfile::certs(&mut Cursor::new(fs::read(CERT_PATH).unwrap()))
+                .next()
                 .unwrap()
-                .remove(0),
-        )],
-        PrivateKey(
-            rustls_pemfile::pkcs8_private_keys(&mut Cursor::new(fs::read(KEY_PATH).unwrap()))
-                .unwrap()
-                .remove(0),
-        ),
+                .unwrap(),
+        ],
+        rustls_pemfile::pkcs8_private_keys(&mut Cursor::new(fs::read(KEY_PATH).unwrap()))
+            .next()
+            .unwrap()
+            .unwrap()
+            .into(),
     )
     .unwrap();
     debug!("listeners created");

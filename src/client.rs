@@ -181,8 +181,9 @@ pub mod tls {
     use tokio::io::{self, ReadHalf, WriteHalf};
     use tokio::net::TcpStream;
     use tokio_rustls::client::TlsStream;
-    pub use tokio_rustls::rustls::{Certificate, ClientConfig};
-    use tokio_rustls::rustls::{RootCertStore, ServerName};
+    pub use tokio_rustls::rustls::pki_types::{CertificateDer, ServerName};
+    pub use tokio_rustls::rustls::ClientConfig;
+    use tokio_rustls::rustls::RootCertStore;
     use tokio_rustls::TlsConnector;
 
     use super::{Client, TcpClient};
@@ -195,7 +196,6 @@ pub mod tls {
     impl TlsClient {
         async fn new(store: RootCertStore, client: TcpClient, domain: &str) -> Result<Self> {
             let config = ClientConfig::builder()
-                .with_safe_defaults()
                 .with_root_certificates(store)
                 .with_no_client_auth();
 
@@ -211,7 +211,7 @@ pub mod tls {
             let domain = ServerName::try_from(domain).map_err(TlsError::from)?;
 
             Ok(Self {
-                inner: connector.connect(domain, client.inner).await?,
+                inner: connector.connect(domain.to_owned(), client.inner).await?,
             })
         }
     }
@@ -230,7 +230,7 @@ pub mod tls {
         webpki_roots: bool,
         #[cfg(feature = "tls-native-certs")]
         native_certs: bool,
-        custom_certs: Vec<Certificate>,
+        custom_certs: Vec<CertificateDer<'static>>,
     }
 
     impl TlsClientBuilder {
@@ -256,12 +256,15 @@ pub mod tls {
             self
         }
 
-        pub fn with_cert(mut self, cert: Certificate) -> Self {
+        pub fn with_cert(mut self, cert: CertificateDer<'static>) -> Self {
             self.custom_certs.push(cert);
             self
         }
 
-        pub fn with_certs(mut self, certs: impl IntoIterator<Item = Certificate>) -> Self {
+        pub fn with_certs(
+            mut self,
+            certs: impl IntoIterator<Item = CertificateDer<'static>>,
+        ) -> Self {
             self.custom_certs.extend(certs);
             self
         }
@@ -272,13 +275,9 @@ pub mod tls {
             #[cfg(feature = "tls-webpki-roots")]
             {
                 if self.webpki_roots {
-                    store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|ta| {
-                        tokio_rustls::rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                            ta.subject,
-                            ta.spki,
-                            ta.name_constraints,
-                        )
-                    }))
+                    store
+                        .roots
+                        .extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
                 }
             }
 
@@ -286,15 +285,13 @@ pub mod tls {
             {
                 if self.native_certs {
                     for cert in rustls_native_certs::load_native_certs().unwrap() {
-                        store
-                            .add(&tokio_rustls::rustls::Certificate(cert.0))
-                            .map_err(TlsError::from)?;
+                        store.add(cert).map_err(TlsError::from)?;
                     }
                 }
             }
 
             for cert in self.custom_certs {
-                store.add(&cert).map_err(TlsError::from)?;
+                store.add(cert).map_err(TlsError::from)?;
             }
 
             TlsClient::new(store, client, domain).await
